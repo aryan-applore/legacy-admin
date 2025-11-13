@@ -11,12 +11,15 @@
   flex-direction: column;
   margin-left: 260px;
   transition: margin-left 0.3s ease;
+  width: calc(100% - 260px);
+  max-width: 100%;
 }
 
 .content-area {
   flex: 1;
   padding: 24px;
-  overflow-y: auto;
+  overflow: auto;
+  width: 100%;
 }
 
 .overlay {
@@ -26,6 +29,7 @@
 @media (max-width: 1024px) {
   .main-content {
     margin-left: 0;
+    width: 100%;
   }
   
   .content-area {
@@ -41,6 +45,12 @@
     bottom: 0;
     background: rgba(0, 0, 0, 0.5);
     z-index: 999;
+  }
+}
+
+@media (max-width: 768px) {
+  .content-area {
+    padding: 12px;
   }
 }
 
