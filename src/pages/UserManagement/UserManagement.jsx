@@ -1,6 +1,9 @@
 import { useState, useMemo, useEffect } from 'react'
 import './UserManagement.css'
 
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
+
 function UserManagement() {
   const [showUserModal, setShowUserModal] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
@@ -15,11 +18,10 @@ function UserManagement() {
   const [filterPayment, setFilterPayment] = useState('Payment Status')
   const [notification, setNotification] = useState(null)
 
-  // Users State - Load from localStorage
-  const [users, setUsers] = useState(() => {
-    const savedUsers = localStorage.getItem('legacy-admin-users')
-    return savedUsers ? JSON.parse(savedUsers) : []
-  })
+  // Users State
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   
   // Store uploaded documents with their file data
   const [userDocuments, setUserDocuments] = useState(() => {
@@ -27,10 +29,50 @@ function UserManagement() {
     return savedDocs ? JSON.parse(savedDocs) : {}
   })
 
-  // Save users to localStorage whenever they change
+  // Fetch users from API
   useEffect(() => {
-    localStorage.setItem('legacy-admin-users', JSON.stringify(users))
-  }, [users])
+    const fetchUsers = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await fetch(`${API_BASE_URL}/users`)
+        const data = await response.json()
+        
+        if (data.success && data.data) {
+          // Map backend user data to frontend format
+          const mappedUsers = data.data.map(user => ({
+            id: user._id || user.id,
+            name: user.name || 'N/A',
+            email: user.email || 'N/A',
+            phone: user.phone || 'N/A',
+            status: 'Active', // Default status, can be updated later
+            project: 'Legacy Heights', // Default project, should be fetched from properties
+            property: 'N/A', // Should be fetched from properties
+            address: user.address ? 
+              `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
+              : '',
+            paymentStatus: 'Up to Date', // Default, should be fetched from payments
+            joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            documents: 0, // Should be fetched from documents
+            tickets: 0, // Should be fetched from tickets
+            role: user.role || 'user'
+          }))
+          setUsers(mappedUsers)
+        } else {
+          setError('Failed to fetch users')
+          setUsers([])
+        }
+      } catch (err) {
+        console.error('Error fetching users:', err)
+        setError('Failed to load users. Please check if the backend server is running.')
+        setUsers([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUsers()
+  }, [])
 
   // Save documents to localStorage whenever they change
   useEffect(() => {
@@ -80,43 +122,110 @@ function UserManagement() {
     setTimeout(() => setNotification(null), 3000)
   }
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
     
-    const userData = {
-      id: selectedUser ? selectedUser.id : Date.now(),
-      name: formData.get('name'),
-      email: formData.get('email'),
-      phone: formData.get('phone'),
-      status: formData.get('status'),
-      project: formData.get('project'),
-      property: formData.get('property'),
-      address: formData.get('address'),
-      paymentStatus: selectedUser ? selectedUser.paymentStatus : 'Up to Date',
-      joinDate: selectedUser ? selectedUser.joinDate : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      documents: selectedUser ? selectedUser.documents : 0,
-      tickets: selectedUser ? selectedUser.tickets : 0
-    }
+    try {
+      const userData = {
+        name: formData.get('name'),
+        email: formData.get('email'),
+        phone: formData.get('phone'),
+        password: formData.get('password') || undefined,
+        role: 'user',
+        address: formData.get('address') ? {
+          line1: formData.get('address'),
+          city: '',
+          state: '',
+          pincode: ''
+        } : undefined
+      }
 
-    if (selectedUser) {
-      // Update existing user
-      setUsers(users.map(u => u.id === selectedUser.id ? userData : u))
-      showNotification('User updated successfully!', 'success')
-    } else {
-      // Add new user
-      setUsers([...users, userData])
-      showNotification('User created successfully!', 'success')
-    }
+      let response
+      if (selectedUser) {
+        // Update existing user
+        response = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(userData)
+        })
+      } else {
+        // Create new user
+        if (!formData.get('password')) {
+          showNotification('Password is required for new users', 'error')
+          return
+        }
+        response = await fetch(`${API_BASE_URL}/users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(userData)
+        })
+      }
 
-    setShowUserModal(false)
-    setSelectedUser(null)
+      const data = await response.json()
+      
+      if (data.success) {
+        // Refresh users list
+        const fetchResponse = await fetch(`${API_BASE_URL}/users`)
+        const fetchData = await fetchResponse.json()
+        
+        if (fetchData.success && fetchData.data) {
+          const mappedUsers = fetchData.data.map(user => ({
+            id: user._id || user.id,
+            name: user.name || 'N/A',
+            email: user.email || 'N/A',
+            phone: user.phone || 'N/A',
+            status: 'Active',
+            project: 'Legacy Heights',
+            property: 'N/A',
+            address: user.address ? 
+              `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
+              : '',
+            paymentStatus: 'Up to Date',
+            joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            documents: 0,
+            tickets: 0,
+            role: user.role || 'user'
+          }))
+          setUsers(mappedUsers)
+        }
+        
+        showNotification(selectedUser ? 'User updated successfully!' : 'User created successfully!', 'success')
+        setShowUserModal(false)
+        setSelectedUser(null)
+      } else {
+        showNotification(data.error || 'Failed to save user', 'error')
+      }
+    } catch (err) {
+      console.error('Error saving user:', err)
+      showNotification('Failed to save user. Please try again.', 'error')
+    }
   }
 
-  const handleDeleteUser = (userId) => {
+  const handleDeleteUser = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
-      setUsers(users.filter(u => u.id !== userId))
-      showNotification('User deleted successfully!', 'success')
+      try {
+        const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+          method: 'DELETE'
+        })
+        
+        const data = await response.json()
+        
+        if (data.success) {
+          // Remove user from local state
+          setUsers(users.filter(u => u.id !== userId))
+          showNotification('User deleted successfully!', 'success')
+        } else {
+          showNotification(data.error || 'Failed to delete user', 'error')
+        }
+      } catch (err) {
+        console.error('Error deleting user:', err)
+        showNotification('Failed to delete user. Please try again.', 'error')
+      }
     }
   }
 
@@ -448,6 +557,22 @@ This is a sample document for demonstration purposes.`
 
       {/* Users Table */}
       <div className="card users-table-card">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+            <p>Loading users...</p>
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--error-color, #e74c3c)' }}>
+            <p>{error}</p>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => window.location.reload()}
+              style={{ marginTop: '10px' }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
         <table className="users-table-um">
           <thead>
             <tr>
@@ -572,14 +697,16 @@ This is a sample document for demonstration purposes.`
             )}
           </tbody>
         </table>
+        )}
 
         {/* Mobile Card View */}
-        {filteredUsers.length === 0 ? (
-          <div className="no-results-mobile">
-            <p>{users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}</p>
-          </div>
-        ) : (
-          filteredUsers.map((user) => (
+        {!loading && !error && (
+          filteredUsers.length === 0 ? (
+            <div className="no-results-mobile">
+              <p>{users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}</p>
+            </div>
+          ) : (
+            filteredUsers.map((user) => (
           <div key={user.id} className="user-card-mobile">
             <div className="user-card-header">
               <div className="user-cell-um">
@@ -687,7 +814,8 @@ This is a sample document for demonstration purposes.`
               </button>
             </div>
           </div>
-          ))
+            ))
+          )
         )}
       </div>
 
