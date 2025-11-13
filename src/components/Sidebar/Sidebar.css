@@ -81,6 +81,10 @@
   font-size: 22px;
   width: 28px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .sidebar-text {

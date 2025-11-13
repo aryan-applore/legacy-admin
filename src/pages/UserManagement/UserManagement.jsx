@@ -1,5 +1,28 @@
 import { useState, useMemo, useEffect } from 'react'
 import './UserManagement.css'
+import { 
+  Users, 
+  CheckCircle, 
+  PauseCircle, 
+  Ticket, 
+  Eye, 
+  Pencil, 
+  PlayCircle, 
+  Key, 
+  FileText, 
+  Bell, 
+  Trash2, 
+  Download,
+  Image as ImageIcon,
+  File,
+  Phone,
+  Building,
+  Home,
+  DollarSign,
+  MapPin,
+  Check,
+  Mail
+} from 'lucide-react'
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
@@ -26,11 +49,48 @@ function UserManagement() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   
+  // Projects and Brokers State
+  const [projects, setProjects] = useState([])
+  const [brokers, setBrokers] = useState([])
+  
   // Store uploaded documents with their file data
   const [userDocuments, setUserDocuments] = useState(() => {
     const savedDocs = localStorage.getItem('legacy-admin-documents')
     return savedDocs ? JSON.parse(savedDocs) : {}
   })
+
+  // Fetch projects and brokers
+  useEffect(() => {
+    const fetchProjectsAndBrokers = async () => {
+      try {
+        // Fetch projects
+        const projectsResponse = await fetch(`${API_BASE_URL}/projects`)
+        const projectsData = await projectsResponse.json()
+        if (projectsData.success) {
+          setProjects(projectsData.data || [])
+          console.log('Projects loaded:', projectsData.data?.length || 0)
+        } else {
+          console.error('Failed to load projects:', projectsData.error)
+        }
+
+        // Fetch brokers
+        const brokersResponse = await fetch(`${API_BASE_URL}/brokers`)
+        const brokersData = await brokersResponse.json()
+        if (brokersData.success) {
+          setBrokers(brokersData.data || [])
+          console.log('Brokers loaded:', brokersData.data?.length || 0)
+        } else {
+          console.error('Failed to load brokers:', brokersData.error)
+        }
+      } catch (err) {
+        console.error('Error fetching projects/brokers:', err)
+        // Note: showNotification is defined later, so we'll just log for now
+        // The error will be visible in console
+      }
+    }
+
+    fetchProjectsAndBrokers()
+  }, [])
 
   // Fetch users from API
   useEffect(() => {
@@ -38,28 +98,39 @@ function UserManagement() {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch(`${API_BASE_URL}/users`)
+        // Fetch users with properties included
+        const response = await fetch(`${API_BASE_URL}/users?includeProperties=true`)
         const data = await response.json()
         
         if (data.success && data.data) {
           // Map backend user data to frontend format
-          const mappedUsers = data.data.map(user => ({
-            id: user._id || user.id,
-            name: user.name || 'N/A',
-            email: user.email || 'N/A',
-            phone: user.phone || 'N/A',
-            status: 'Active', // Default status, can be updated later
-            project: 'Legacy Heights', // Default project, should be fetched from properties
-            property: 'N/A', // Should be fetched from properties
-            address: user.address ? 
-              `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
-              : '',
-            paymentStatus: 'Up to Date', // Default, should be fetched from payments
-            joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-            documents: 0, // Should be fetched from documents
-            tickets: 0, // Should be fetched from tickets
-            role: user.role || 'user'
-          }))
+          const mappedUsers = data.data.map(user => {
+            // Get first property if available
+            const firstProperty = user.properties && user.properties.length > 0 ? user.properties[0] : null
+            
+            return {
+              id: user._id || user.id,
+              name: user.name || 'N/A',
+              email: user.email || 'N/A',
+              phone: user.phone || 'N/A',
+              status: 'Active', // Default status, can be updated later
+              project: firstProperty?.projectName || 'N/A',
+              property: firstProperty ? `${firstProperty.flatNo}${firstProperty.buildingName ? ` - ${firstProperty.buildingName}` : ''}` : 'N/A',
+              propertyId: firstProperty?.id || null,
+              projectId: firstProperty?.projectId || null,
+              brokerId: firstProperty?.brokerId || null,
+              broker: firstProperty?.brokerName ? `${firstProperty.brokerName}${firstProperty.brokerCompany ? ` (${firstProperty.brokerCompany})` : ''}` : 'N/A',
+              address: user.address ? 
+                `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
+                : '',
+              paymentStatus: 'Up to Date', // Default, should be fetched from payments
+              joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              documents: 0, // Should be fetched from documents
+              tickets: 0, // Should be fetched from tickets
+              role: user.role || 'user',
+              properties: user.properties || [] // Store all properties
+            }
+          })
           setUsers(mappedUsers)
         } else {
           setError('Failed to fetch users')
@@ -156,9 +227,11 @@ function UserManagement() {
         } : undefined
       }
 
+      let userId
       let response
       if (selectedUser) {
         // Update existing user
+        userId = selectedUser.id
         response = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
           method: 'PUT',
           headers: {
@@ -184,28 +257,88 @@ function UserManagement() {
       const data = await response.json()
       
       if (data.success) {
+        userId = userId || data.data._id || data.data.id
+        
+        // Assign user to property if project and property data provided
+        const projectId = formData.get('projectId')
+        const flatNo = formData.get('flatNo')
+        const brokerId = formData.get('brokerId') || null
+        
+        if (projectId && flatNo) {
+          const propertyData = {
+            flatNo: flatNo,
+            buildingName: formData.get('buildingName') || undefined,
+            location: formData.get('address') ? {
+              address: formData.get('address')
+            } : undefined,
+            specifications: {
+              area: formData.get('area') ? parseFloat(formData.get('area')) : undefined,
+              bedrooms: formData.get('bedrooms') ? parseInt(formData.get('bedrooms')) : undefined,
+              bathrooms: formData.get('bathrooms') ? parseInt(formData.get('bathrooms')) : undefined
+            },
+            pricing: {
+              totalPrice: formData.get('totalPrice') ? parseFloat(formData.get('totalPrice')) : undefined,
+              bookingAmount: formData.get('bookingAmount') ? parseFloat(formData.get('bookingAmount')) : undefined
+            }
+          }
+
+          try {
+            const assignResponse = await fetch(`${API_BASE_URL}/users/${userId}/assign-property`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('adminToken') || ''}`
+              },
+              body: JSON.stringify({
+                projectId,
+                propertyData,
+                brokerId: brokerId || undefined
+              })
+            })
+
+            const assignData = await assignResponse.json()
+            if (!assignData.success) {
+              console.error('Failed to assign property:', assignData.error)
+              showNotification('User created but property assignment failed: ' + assignData.error, 'error')
+            }
+          } catch (assignErr) {
+            console.error('Error assigning property:', assignErr)
+            showNotification('User created but property assignment failed', 'error')
+          }
+        }
+        
         // Refresh users list
-        const fetchResponse = await fetch(`${API_BASE_URL}/users`)
+        const fetchResponse = await fetch(`${API_BASE_URL}/users?includeProperties=true`)
         const fetchData = await fetchResponse.json()
         
         if (fetchData.success && fetchData.data) {
-          const mappedUsers = fetchData.data.map(user => ({
-            id: user._id || user.id,
-            name: user.name || 'N/A',
-            email: user.email || 'N/A',
-            phone: user.phone || 'N/A',
-            status: 'Active',
-            project: 'Legacy Heights',
-            property: 'N/A',
-            address: user.address ? 
-              `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
-              : '',
-            paymentStatus: 'Up to Date',
-            joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-            documents: 0,
-            tickets: 0,
-            role: user.role || 'user'
-          }))
+          const mappedUsers = fetchData.data.map(user => {
+            // Get first property if available
+            const firstProperty = user.properties && user.properties.length > 0 ? user.properties[0] : null
+            
+            return {
+              id: user._id || user.id,
+              name: user.name || 'N/A',
+              email: user.email || 'N/A',
+              phone: user.phone || 'N/A',
+              status: 'Active',
+              project: firstProperty?.projectName || 'N/A',
+              property: firstProperty ? `${firstProperty.flatNo}${firstProperty.buildingName ? ` - ${firstProperty.buildingName}` : ''}` : 'N/A',
+              propertyId: firstProperty?.id || null,
+              projectId: firstProperty?.projectId || null,
+              brokerId: firstProperty?.brokerId || null,
+              broker: firstProperty?.brokerName ? `${firstProperty.brokerName}${firstProperty.brokerCompany ? ` (${firstProperty.brokerCompany})` : ''}` : 'N/A',
+              address: user.address ? 
+                `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
+                : '',
+              paymentStatus: 'Up to Date',
+              joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              documents: 0,
+              tickets: 0,
+              role: user.role || 'user',
+              properties: user.properties || []
+            }
+          })
           setUsers(mappedUsers)
         }
         
@@ -492,7 +625,7 @@ This is a sample document for demonstration purposes.`
       {/* Stats Overview */}
       <div className="user-stats-grid">
         <div className="stat-card-um">
-          <div className="stat-icon-um">👥</div>
+          <div className="stat-icon-um"><Users size={24} /></div>
           <div>
             <h3>Total Users</h3>
             <p className="stat-value-um">{users.length}</p>
@@ -500,7 +633,7 @@ This is a sample document for demonstration purposes.`
           </div>
         </div>
         <div className="stat-card-um">
-          <div className="stat-icon-um">✅</div>
+          <div className="stat-icon-um"><CheckCircle size={24} /></div>
           <div>
             <h3>Active Users</h3>
             <p className="stat-value-um">{users.filter(u => u.status === 'Active').length}</p>
@@ -508,7 +641,7 @@ This is a sample document for demonstration purposes.`
           </div>
         </div>
         <div className="stat-card-um">
-          <div className="stat-icon-um">⏸️</div>
+          <div className="stat-icon-um"><PauseCircle size={24} /></div>
           <div>
             <h3>Inactive Users</h3>
             <p className="stat-value-um">{users.filter(u => u.status === 'Inactive').length}</p>
@@ -516,7 +649,7 @@ This is a sample document for demonstration purposes.`
           </div>
         </div>
         <div className="stat-card-um">
-          <div className="stat-icon-um">🎫</div>
+          <div className="stat-icon-um"><Ticket size={24} /></div>
           <div>
             <h3>Open Tickets</h3>
             <p className="stat-value-um">{users.reduce((sum, u) => sum + u.tickets, 0)}</p>
@@ -594,6 +727,7 @@ This is a sample document for demonstration purposes.`
               <th>User Details</th>
               <th>Contact</th>
               <th>Project / Property</th>
+              <th>Broker</th>
               <th>Status</th>
               <th>Payment</th>
               <th>Documents</th>
@@ -604,7 +738,7 @@ This is a sample document for demonstration purposes.`
           <tbody>
             {filteredUsers.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                   {users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}
                 </td>
               </tr>
@@ -635,6 +769,15 @@ This is a sample document for demonstration purposes.`
                   </div>
                 </td>
                 <td>
+                  <div>
+                    {user.broker !== 'N/A' ? (
+                      <div className="broker-name">{user.broker}</div>
+                    ) : (
+                      <span className="no-broker">No Broker</span>
+                    )}
+                  </div>
+                </td>
+                <td>
                   <span className={`status-badge ${user.status === 'Active' ? 'status-success' : 'status-error'}`}>
                     {user.status}
                   </span>
@@ -661,49 +804,49 @@ This is a sample document for demonstration purposes.`
                       title="View Details"
                       onClick={() => handleViewDetails(user)}
                     >
-                      👁️
+                      View
                     </button>
                     <button 
                       className="action-btn-um" 
                       title="Edit User"
                       onClick={() => handleEditUser(user)}
                     >
-                      ✏️
+                      Edit
                     </button>
                     <button 
                       className="action-btn-um" 
                       title={user.status === 'Active' ? 'Deactivate Account' : 'Activate Account'}
                       onClick={() => handleToggleStatus(user.id, user.status)}
                     >
-                      {user.status === 'Active' ? '⏸️' : '▶️'}
+                      {user.status === 'Active' ? 'Deactivate' : 'Activate'}
                     </button>
                     <button 
                       className="action-btn-um" 
                       title="Reset Password"
                       onClick={() => handleResetPassword(user)}
                     >
-                      🔑
+                      Reset
                     </button>
                     <button 
                       className="action-btn-um" 
                       title="Manage Documents"
                       onClick={() => handleManageDocuments(user)}
                     >
-                      📄
+                      Docs
                     </button>
                     <button 
                       className="action-btn-um" 
                       title="Manage Notifications"
                       onClick={() => handleManageNotifications(user)}
                     >
-                      🔔
+                      Notify
                     </button>
                     <button 
                       className="action-btn-um" 
                       title="Delete User"
                       onClick={() => handleDeleteUser(user.id)}
                     >
-                      🗑️
+                      Delete
                     </button>
                   </div>
                 </td>
@@ -740,19 +883,23 @@ This is a sample document for demonstration purposes.`
             
             <div className="user-card-body">
               <div className="card-info-row">
-                <span className="card-label">📞 Phone:</span>
+                <span className="card-label">Phone:</span>
                 <span>{user.phone}</span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">🏢 Project:</span>
+                <span className="card-label">Project:</span>
                 <span>{user.project}</span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">🏠 Property:</span>
+                <span className="card-label">Property:</span>
                 <span>{user.property}</span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">💰 Payment:</span>
+                <span className="card-label">Broker:</span>
+                <span>{user.broker !== 'N/A' ? user.broker : 'No Broker'}</span>
+              </div>
+              <div className="card-info-row">
+                <span className="card-label">Payment:</span>
                 <span className={`payment-badge ${
                   user.paymentStatus === 'Up to Date' ? 'payment-success' : 
                   user.paymentStatus === 'Pending' ? 'payment-warning' : 
@@ -762,16 +909,16 @@ This is a sample document for demonstration purposes.`
                 </span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">📄 Documents:</span>
+                <span className="card-label">Documents:</span>
                 <span className="docs-count">{user.documents} docs</span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">🎫 Tickets:</span>
+                <span className="card-label">Tickets:</span>
                 <span className="tickets-count">{user.tickets}</span>
               </div>
               {user.address && (
                 <div className="card-info-row">
-                  <span className="card-label">📍 Address:</span>
+                  <span className="card-label">Address:</span>
                   <span>{user.address}</span>
                 </div>
               )}
@@ -782,13 +929,13 @@ This is a sample document for demonstration purposes.`
                 className="btn btn-outline"
                 onClick={() => handleViewDetails(user)}
               >
-                👁️ View
+                <Eye size={16} style={{ marginRight: '4px' }} /> View
               </button>
               <button 
                 className="btn btn-primary"
                 onClick={() => handleEditUser(user)}
               >
-                ✏️ Edit
+                <Pencil size={16} style={{ marginRight: '4px' }} /> Edit
               </button>
             </div>
             <div className="user-card-actions" style={{ marginTop: '8px' }}>
@@ -797,21 +944,21 @@ This is a sample document for demonstration purposes.`
                   className="btn btn-warning"
                   onClick={() => handleDeactivateUser(user.id)}
                 >
-                  ⏸️ Deactivate
+                  <PauseCircle size={16} style={{ marginRight: '4px' }} /> Deactivate
                 </button>
               ) : (
                 <button 
                   className="btn btn-success"
                   onClick={() => handleActivateUser(user.id)}
                 >
-                  ▶️ Activate
+                  <PlayCircle size={16} style={{ marginRight: '4px' }} /> Activate
                 </button>
               )}
               <button 
                 className="btn btn-outline"
                 onClick={() => handleManageDocuments(user)}
               >
-                📄 Documents
+                <FileText size={16} style={{ marginRight: '4px' }} /> Documents
               </button>
             </div>
             <div className="user-card-actions" style={{ marginTop: '8px' }}>
@@ -819,13 +966,13 @@ This is a sample document for demonstration purposes.`
                 className="btn btn-outline"
                 onClick={() => handleManageNotifications(user)}
               >
-                🔔 Notify
+                <Bell size={16} style={{ marginRight: '4px' }} /> Notify
               </button>
               <button 
                 className="btn btn-outline"
                 onClick={() => handleResetPassword(user)}
               >
-                🔑 Reset Password
+                <Key size={16} style={{ marginRight: '4px' }} /> Reset Password
               </button>
             </div>
           </div>
@@ -871,6 +1018,10 @@ This is a sample document for demonstration purposes.`
                   <p>{selectedUser.property}</p>
                 </div>
                 <div className="detail-item">
+                  <label>Broker</label>
+                  <p>{selectedUser.broker !== 'N/A' ? selectedUser.broker : 'No Broker Assigned'}</p>
+                </div>
+                <div className="detail-item">
                   <label>Payment Status</label>
                   <p>{selectedUser.paymentStatus}</p>
                 </div>
@@ -906,7 +1057,7 @@ This is a sample document for demonstration purposes.`
                         handleDeactivateUser(selectedUser.id);
                       }}
                     >
-                      ⏸️ Deactivate Account
+                      <PauseCircle size={16} style={{ marginRight: '4px' }} /> Deactivate Account
                     </button>
                   ) : (
                     <button 
@@ -916,14 +1067,14 @@ This is a sample document for demonstration purposes.`
                         handleActivateUser(selectedUser.id);
                       }}
                     >
-                      ▶️ Activate Account
+                      <PlayCircle size={16} style={{ marginRight: '4px' }} /> Activate Account
                     </button>
                   )}
                   <button 
                     className="btn btn-outline"
                     onClick={() => handleResetPassword(selectedUser)}
                   >
-                    🔑 Reset Password
+                    <Key size={16} style={{ marginRight: '4px' }} /> Reset Password
                   </button>
                   <button 
                     className="btn btn-outline"
@@ -932,7 +1083,7 @@ This is a sample document for demonstration purposes.`
                       handleManageDocuments(selectedUser);
                     }}
                   >
-                    📄 Manage Documents
+                    <FileText size={16} style={{ marginRight: '4px' }} /> Manage Documents
                   </button>
                   <button 
                     className="btn btn-outline"
@@ -941,7 +1092,7 @@ This is a sample document for demonstration purposes.`
                       handleManageNotifications(selectedUser);
                     }}
                   >
-                    🔔 Send Notification
+                    <Bell size={16} style={{ marginRight: '4px' }} /> Send Notification
                   </button>
                 </div>
               </div>
@@ -1025,36 +1176,137 @@ This is a sample document for demonstration purposes.`
                   </div>
                 </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Assign Project *</label>
-                    <select 
-                      name="project"
-                      defaultValue={selectedUser?.project || ''}
-                      required
-                      className={formErrors.project ? 'error' : ''}
-                    >
-                      <option value="">Select Project</option>
-                      <option>Legacy Heights</option>
-                      <option>Legacy Gardens</option>
-                      <option>Legacy Towers</option>
-                    </select>
-                    {formErrors.project && <span className="error-message">{formErrors.project}</span>}
+                {/* Property Assignment Section */}
+                <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px solid #e0e0e0' }}>
+                  <h3 style={{ marginBottom: '16px', color: '#2A669B', fontSize: '18px', fontWeight: '600' }}>
+                    Property Assignment
+                  </h3>
+                  <p style={{ marginBottom: '20px', color: '#666', fontSize: '14px' }}>
+                    Assign this user to a property/project. This will allow them to view project details, documents, and payment schedules.
+                  </p>
+                  
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Assign Project *</label>
+                      <select 
+                        name="projectId"
+                        defaultValue={selectedUser?.projectId || ''}
+                        required
+                      >
+                        <option value="">Select Project</option>
+                        {projects.length > 0 ? (
+                          projects.map(project => (
+                            <option key={project._id || project.id} value={project._id || project.id}>
+                              {project.name}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No projects available. Please create a project first.</option>
+                        )}
+                      </select>
+                      {projects.length === 0 && (
+                        <small style={{ color: '#e74c3c', display: 'block', marginTop: '4px' }}>
+                          No projects found. Projects need to be created first.
+                        </small>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>Flat/Unit Number *</label>
+                      <input 
+                        type="text"
+                        name="flatNo" 
+                        placeholder="e.g., A-1203" 
+                        defaultValue={selectedUser?.flatNo}
+                        required 
+                      />
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label>Assign Property *</label>
-                    <input 
-                      type="text"
-                      name="property" 
-                      placeholder="e.g., Flat A-1203" 
-                      defaultValue={selectedUser?.property}
-                      pattern="[a-zA-Z0-9\s\-]+"
-                      minLength="2"
-                      title="Property can only contain letters, numbers, spaces, and hyphens"
-                      required 
-                      className={formErrors.property ? 'error' : ''}
-                    />
-                    {formErrors.property && <span className="error-message">{formErrors.property}</span>}
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Building Name</label>
+                      <input 
+                        type="text"
+                        name="buildingName" 
+                        placeholder="e.g., Tower A" 
+                        defaultValue={selectedUser?.buildingName}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Assign Broker (Optional)</label>
+                      <select 
+                        name="brokerId"
+                        defaultValue={selectedUser?.brokerId || ''}
+                      >
+                        <option value="">No Broker</option>
+                        {brokers.length > 0 ? (
+                          brokers.map(broker => (
+                            <option key={broker._id || broker.id} value={broker._id || broker.id}>
+                              {broker.name} {broker.company ? `- ${broker.company}` : ''}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No brokers available</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Area (sqft)</label>
+                      <input 
+                        type="number"
+                        name="area" 
+                        placeholder="e.g., 1200" 
+                        defaultValue={selectedUser?.area}
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Total Price (INR)</label>
+                      <input 
+                        type="number"
+                        name="totalPrice" 
+                        placeholder="e.g., 5000000" 
+                        defaultValue={selectedUser?.totalPrice}
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Bedrooms</label>
+                      <input 
+                        type="number"
+                        name="bedrooms" 
+                        placeholder="e.g., 2" 
+                        defaultValue={selectedUser?.bedrooms}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Bathrooms</label>
+                      <input 
+                        type="number"
+                        name="bathrooms" 
+                        placeholder="e.g., 2" 
+                        defaultValue={selectedUser?.bathrooms}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Booking Amount (INR)</label>
+                      <input 
+                        type="number"
+                        name="bookingAmount" 
+                        placeholder="e.g., 500000" 
+                        defaultValue={selectedUser?.bookingAmount}
+                        step="0.01"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1189,9 +1441,9 @@ This is a sample document for demonstration purposes.`
                   userDocuments[selectedUser.id].map((doc) => (
                     <div key={doc.id} className="document-item">
                       <div className="document-icon">
-                        {doc.fileType?.includes('pdf') ? '📄' : 
-                         doc.fileType?.includes('image') ? '🖼️' : 
-                         doc.fileType?.includes('word') ? '📝' : '📄'}
+                        {doc.fileType?.includes('pdf') ? <FileText size={20} /> : 
+                         doc.fileType?.includes('image') ? <ImageIcon size={20} /> : 
+                         doc.fileType?.includes('word') ? <File size={20} /> : <FileText size={20} />}
                       </div>
                       <div className="document-info">
                         <div className="document-name">{doc.name}</div>
@@ -1205,7 +1457,7 @@ This is a sample document for demonstration purposes.`
                         onClick={() => handleDownloadDocument(doc)}
                         title="Download"
                       >
-                        ⬇️
+                        <Download size={16} />
                       </button>
                     </div>
                   ))
@@ -1213,7 +1465,7 @@ This is a sample document for demonstration purposes.`
                   // Show sample documents for demo users
                   <>
                     <div className="document-item">
-                      <div className="document-icon">📄</div>
+                      <div className="document-icon"><FileText size={20} /></div>
                       <div className="document-info">
                         <div className="document-name">Welcome Letter</div>
                         <div className="document-meta">Uploaded on {selectedUser.joinDate} • PDF • 2.3 MB</div>
@@ -1227,7 +1479,7 @@ This is a sample document for demonstration purposes.`
                         })}
                         title="Download"
                       >
-                        ⬇️
+                        <Download size={16} />
                       </button>
                     </div>
                   </>
@@ -1329,14 +1581,14 @@ This is a sample document for demonstration purposes.`
               <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Notifications</h3>
               <div className="recent-notifications-list">
                 <div className="notification-item">
-                  <div className="notification-icon success">✓</div>
+                  <div className="notification-icon success"><Check size={16} /></div>
                   <div className="notification-info">
                     <div className="notification-title">Payment Received Confirmation</div>
                     <div className="notification-meta">Sent 2 days ago • Read</div>
                   </div>
                 </div>
                 <div className="notification-item">
-                  <div className="notification-icon pending">📧</div>
+                  <div className="notification-icon pending"><Mail size={16} /></div>
                   <div className="notification-info">
                     <div className="notification-title">Construction Progress Update</div>
                     <div className="notification-meta">Sent 5 days ago • Delivered</div>

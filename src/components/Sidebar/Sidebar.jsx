@@ -1,4 +1,13 @@
 import { NavLink } from 'react-router-dom'
+import { 
+  BarChart3, 
+  Users, 
+  Home, 
+  Handshake, 
+  Factory, 
+  FileText, 
+  Headphones 
+} from 'lucide-react'
 import './Sidebar.css'
 
 function Sidebar({ isOpen, onClose }) {
@@ -6,32 +15,37 @@ function Sidebar({ isOpen, onClose }) {
     {
       path: '/',
       name: 'Dashboard',
-      icon: '📊'
+      icon: <BarChart3 size={20} />
     },
     {
       path: '/user-management',
       name: 'User Management',
-      icon: '👥'
+      icon: <Users size={20} />
+    },
+    {
+      path: '/property-management',
+      name: 'Property Management',
+      icon: <Home size={20} />
     },
     {
       path: '/broker-management',
       name: 'Broker Management',
-      icon: '🤝'
+      icon: <Handshake size={20} />
     },
     {
       path: '/supplier-management',
       name: 'Supplier Management',
-      icon: '🏭'
+      icon: <Factory size={20} />
     },
     {
       path: '/documents',
       name: 'Documents',
-      icon: '📄'
+      icon: <FileText size={20} />
     },
     {
       path: '/support',
       name: 'Support',
-      icon: '🎧'
+      icon: <Headphones size={20} />
     }
   ]
 
