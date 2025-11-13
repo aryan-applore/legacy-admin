@@ -229,8 +229,14 @@
 .card-info-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   font-size: 14px;
+  gap: 10px;
+}
+
+.card-info-row span:last-child {
+  text-align: right;
+  word-break: break-word;
 }
 
 .card-label {
@@ -408,6 +414,59 @@
   font-size: 14px;
   color: var(--text-primary);
   margin: 0;
+}
+
+.address-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.address-section label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.address-section p {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.account-actions-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 2px solid var(--border-color);
+}
+
+.account-actions-section h4 {
+  font-size: 16px;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+}
+
+.account-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.account-actions-grid .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .account-actions-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .modal-actions {

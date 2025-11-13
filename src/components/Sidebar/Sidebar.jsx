@@ -19,9 +19,9 @@ function Sidebar({ isOpen, onClose }) {
       icon: '🤝'
     },
     {
-      path: '/payments',
-      name: 'Payments',
-      icon: '💰'
+      path: '/supplier-management',
+      name: 'Supplier Management',
+      icon: '🏭'
     },
     {
       path: '/documents',

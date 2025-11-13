@@ -1,83 +1,136 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import './BrokerManagement.css'
 
 function BrokerManagement() {
   const [showBrokerModal, setShowBrokerModal] = useState(false)
   const [selectedBroker, setSelectedBroker] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false)
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false)
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
 
-  const brokers = [
-    {
-      id: 1,
-      name: 'Rohit Mehta',
-      email: 'rohit.mehta@broker.com',
-      phone: '+91 98765 12345',
-      status: 'Active',
-      clientsManaged: 15,
-      bidsSubmitted: 8,
-      successfulDeals: 5,
-      poCount: 12,
-      commission: '2.5%',
-      joinDate: 'Jan 10, 2024',
-      performance: 'Excellent'
-    },
-    {
-      id: 2,
-      name: 'Kavita Desai',
-      email: 'kavita.desai@broker.com',
-      phone: '+91 98765 12346',
-      status: 'Active',
-      clientsManaged: 22,
-      bidsSubmitted: 15,
-      successfulDeals: 10,
-      poCount: 18,
-      commission: '3%',
-      joinDate: 'Feb 15, 2024',
-      performance: 'Outstanding'
-    },
-    {
-      id: 3,
-      name: 'Arjun Singh',
-      email: 'arjun.singh@broker.com',
-      phone: '+91 98765 12347',
-      status: 'Active',
-      clientsManaged: 8,
-      bidsSubmitted: 5,
-      successfulDeals: 3,
-      poCount: 7,
-      commission: '2%',
-      joinDate: 'Mar 20, 2024',
-      performance: 'Good'
-    },
-    {
-      id: 4,
-      name: 'Neha Kapoor',
-      email: 'neha.kapoor@broker.com',
-      phone: '+91 98765 12348',
-      status: 'Inactive',
-      clientsManaged: 5,
-      bidsSubmitted: 2,
-      successfulDeals: 1,
-      poCount: 3,
-      commission: '2%',
-      joinDate: 'Apr 01, 2024',
-      performance: 'Average'
-    },
-    {
-      id: 5,
-      name: 'Sandeep Rao',
-      email: 'sandeep.rao@broker.com',
-      phone: '+91 98765 12349',
-      status: 'Active',
-      clientsManaged: 18,
-      bidsSubmitted: 12,
-      successfulDeals: 8,
-      poCount: 15,
-      commission: '2.8%',
-      joinDate: 'May 05, 2024',
-      performance: 'Excellent'
+  // Search and Filter States
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterStatus, setFilterStatus] = useState('All Status')
+  const [filterPerformance, setFilterPerformance] = useState('Performance')
+  const [sortBy, setSortBy] = useState('Sort By')
+  const [notification, setNotification] = useState(null)
+
+  // Brokers State - Load from localStorage
+  const [brokers, setBrokers] = useState(() => {
+    const savedBrokers = localStorage.getItem('legacy-admin-brokers')
+    return savedBrokers ? JSON.parse(savedBrokers) : []
+  })
+
+  // Store uploaded documents with their file data
+  const [brokerDocuments, setBrokerDocuments] = useState(() => {
+    const savedDocs = localStorage.getItem('legacy-admin-broker-documents')
+    return savedDocs ? JSON.parse(savedDocs) : {}
+  })
+
+  // Store broker assignments (buyers and suppliers)
+  const [brokerAssignments, setBrokerAssignments] = useState(() => {
+    const savedAssignments = localStorage.getItem('legacy-admin-broker-assignments')
+    return savedAssignments ? JSON.parse(savedAssignments) : {}
+  })
+
+  // Load actual users from User Management (buyers)
+  const [availableBuyers, setAvailableBuyers] = useState(() => {
+    const savedUsers = localStorage.getItem('legacy-admin-users')
+    return savedUsers ? JSON.parse(savedUsers) : []
+  })
+
+  // Load actual suppliers from Supplier Management
+  const [availableSuppliers, setAvailableSuppliers] = useState(() => {
+    const savedSuppliers = localStorage.getItem('legacy-admin-suppliers')
+    return savedSuppliers ? JSON.parse(savedSuppliers) : []
+  })
+
+  // Listen for changes in User Management and update available buyers
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const savedUsers = localStorage.getItem('legacy-admin-users')
+      if (savedUsers) {
+        setAvailableBuyers(JSON.parse(savedUsers))
+      }
+      
+      const savedSuppliers = localStorage.getItem('legacy-admin-suppliers')
+      if (savedSuppliers) {
+        setAvailableSuppliers(JSON.parse(savedSuppliers))
+      }
     }
-  ]
+
+    // Listen for storage events (when localStorage changes in other tabs)
+    window.addEventListener('storage', handleStorageChange)
+
+    // Also check periodically for updates in same tab
+    const interval = setInterval(() => {
+      const savedUsers = localStorage.getItem('legacy-admin-users')
+      const currentUsers = JSON.stringify(availableBuyers)
+      if (savedUsers && savedUsers !== currentUsers) {
+        setAvailableBuyers(JSON.parse(savedUsers))
+      }
+
+      const savedSuppliers = localStorage.getItem('legacy-admin-suppliers')
+      const currentSuppliers = JSON.stringify(availableSuppliers)
+      if (savedSuppliers && savedSuppliers !== currentSuppliers) {
+        setAvailableSuppliers(JSON.parse(savedSuppliers))
+      }
+    }, 1000)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      clearInterval(interval)
+    }
+  }, [availableBuyers, availableSuppliers])
+
+  // Save brokers to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('legacy-admin-brokers', JSON.stringify(brokers))
+  }, [brokers])
+
+  // Save documents to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('legacy-admin-broker-documents', JSON.stringify(brokerDocuments))
+  }, [brokerDocuments])
+
+  // Save assignments to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('legacy-admin-broker-assignments', JSON.stringify(brokerAssignments))
+  }, [brokerAssignments])
+
+  // Filtered and Searched Brokers
+  const filteredBrokers = useMemo(() => {
+    let filtered = brokers.filter(broker => {
+      // Search filter
+      const searchLower = searchQuery.toLowerCase()
+      const matchesSearch = 
+        broker.name.toLowerCase().includes(searchLower) ||
+        broker.email.toLowerCase().includes(searchLower) ||
+        broker.phone.includes(searchQuery)
+
+      // Status filter
+      const matchesStatus = 
+        filterStatus === 'All Status' || broker.status === filterStatus
+
+      // Performance filter
+      const matchesPerformance = 
+        filterPerformance === 'Performance' || broker.performance === filterPerformance
+
+      return matchesSearch && matchesStatus && matchesPerformance
+    })
+
+    // Sorting
+    if (sortBy === 'Most Deals') {
+      filtered.sort((a, b) => b.successfulDeals - a.successfulDeals)
+    } else if (sortBy === 'Most Clients') {
+      filtered.sort((a, b) => b.clientsManaged - a.clientsManaged)
+    } else if (sortBy === 'Newest First') {
+      filtered.sort((a, b) => new Date(b.joinDate) - new Date(a.joinDate))
+    }
+
+    return filtered
+  }, [brokers, searchQuery, filterStatus, filterPerformance, sortBy])
 
   const handleViewDetails = (broker) => {
     setSelectedBroker(broker)
@@ -87,6 +140,330 @@ function BrokerManagement() {
   const handleEditBroker = (broker) => {
     setSelectedBroker(broker)
     setShowBrokerModal(true)
+  }
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 3000)
+  }
+
+  const handleSaveBroker = (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    
+    const brokerData = {
+      id: selectedBroker ? selectedBroker.id : Date.now(),
+      name: formData.get('name'),
+      email: formData.get('email'),
+      phone: formData.get('phone'),
+      status: formData.get('status'),
+      commission: formData.get('commission'),
+      performance: formData.get('performance'),
+      address: formData.get('address'),
+      notes: formData.get('notes'),
+      clientsManaged: selectedBroker ? selectedBroker.clientsManaged : 0,
+      bidsSubmitted: selectedBroker ? selectedBroker.bidsSubmitted : 0,
+      successfulDeals: selectedBroker ? selectedBroker.successfulDeals : 0,
+      poCount: selectedBroker ? selectedBroker.poCount : 0,
+      joinDate: selectedBroker ? selectedBroker.joinDate : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      documents: selectedBroker ? selectedBroker.documents : 0
+    }
+
+    if (selectedBroker) {
+      // Update existing broker
+      setBrokers(brokers.map(b => b.id === selectedBroker.id ? brokerData : b))
+      showNotification('Broker updated successfully!', 'success')
+    } else {
+      // Add new broker
+      setBrokers([...brokers, brokerData])
+      showNotification('Broker created successfully!', 'success')
+    }
+
+    setShowBrokerModal(false)
+    setSelectedBroker(null)
+  }
+
+  const handleDeleteBroker = (brokerId) => {
+    if (window.confirm('Are you sure you want to delete this broker?')) {
+      setBrokers(brokers.filter(b => b.id !== brokerId))
+      showNotification('Broker deleted successfully!', 'success')
+    }
+  }
+
+  const handleResetPassword = (broker) => {
+    showNotification(`Password reset link sent to ${broker.email}`, 'info')
+  }
+
+  const handleActivateBroker = (brokerId) => {
+    const broker = brokers.find(b => b.id === brokerId)
+    if (window.confirm(`Activate ${broker.name}'s account? They will regain access to the system.`)) {
+      setBrokers(brokers.map(b => 
+        b.id === brokerId 
+          ? { ...b, status: 'Active' }
+          : b
+      ))
+      showNotification(`${broker.name}'s account has been activated!`, 'success')
+    }
+  }
+
+  const handleDeactivateBroker = (brokerId) => {
+    const broker = brokers.find(b => b.id === brokerId)
+    if (window.confirm(`Deactivate ${broker.name}'s account? They will lose access to the system.`)) {
+      setBrokers(brokers.map(b => 
+        b.id === brokerId 
+          ? { ...b, status: 'Inactive' }
+          : b
+      ))
+      showNotification(`${broker.name}'s account has been deactivated!`, 'success')
+    }
+  }
+
+  const handleToggleStatus = (brokerId, currentStatus) => {
+    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active'
+    const action = newStatus === 'Active' ? 'activate' : 'deactivate'
+    const broker = brokers.find(b => b.id === brokerId)
+    
+    if (window.confirm(`Are you sure you want to ${action} ${broker.name}'s account?`)) {
+      setBrokers(brokers.map(b => 
+        b.id === brokerId 
+          ? { ...b, status: newStatus }
+          : b
+      ))
+      showNotification(`Broker account ${action}d successfully!`, 'success')
+    }
+  }
+
+  const handleClearFilters = () => {
+    setSearchQuery('')
+    setFilterStatus('All Status')
+    setFilterPerformance('Performance')
+    setSortBy('Sort By')
+    showNotification('Filters cleared!', 'info')
+  }
+
+  const handleManageDocuments = (broker) => {
+    setSelectedBroker(broker)
+    setShowDocumentsModal(true)
+  }
+
+  const handleUploadDocument = (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const documentType = formData.get('documentType')
+    const documentTitle = formData.get('documentTitle')
+    const file = formData.get('document')
+    const description = formData.get('description')
+    
+    if (file && file.size > 0) {
+      // Store the document with file data
+      const documentData = {
+        id: Date.now(),
+        name: documentTitle || documentType,
+        type: documentType,
+        file: file,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        description: description,
+        uploadDate: new Date().toLocaleString(),
+        brokerId: selectedBroker.id
+      }
+      
+      // Update brokerDocuments state
+      setBrokerDocuments(prev => ({
+        ...prev,
+        [selectedBroker.id]: [...(prev[selectedBroker.id] || []), documentData]
+      }))
+      
+      // Update broker's document count
+      setBrokers(brokers.map(b => 
+        b.id === selectedBroker.id 
+          ? { ...b, documents: (b.documents || 0) + 1 }
+          : b
+      ))
+      
+      showNotification(`${documentType} uploaded successfully!`, 'success')
+      e.target.reset()
+    }
+  }
+
+  const handleManageNotifications = (broker) => {
+    setSelectedBroker(broker)
+    setShowNotificationsModal(true)
+  }
+
+  const handleSendNotification = (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const title = formData.get('notificationTitle')
+    
+    showNotification(`Notification "${title}" sent to ${selectedBroker.name}!`, 'success')
+    setShowNotificationsModal(false)
+    setSelectedBroker(null)
+    e.target.reset()
+  }
+
+  const handleManageAssignments = (broker) => {
+    setSelectedBroker(broker)
+    setShowAssignmentModal(true)
+  }
+
+  const handleSaveAssignments = (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    
+    // Get selected buyers
+    const buyerCheckboxes = document.querySelectorAll('input[name="buyers"]:checked')
+    const selectedBuyers = Array.from(buyerCheckboxes).map(cb => parseInt(cb.value))
+    
+    // Get selected suppliers
+    const supplierCheckboxes = document.querySelectorAll('input[name="suppliers"]:checked')
+    const selectedSuppliers = Array.from(supplierCheckboxes).map(cb => parseInt(cb.value))
+    
+    // Update assignments
+    setBrokerAssignments(prev => ({
+      ...prev,
+      [selectedBroker.id]: {
+        buyers: selectedBuyers,
+        suppliers: selectedSuppliers
+      }
+    }))
+
+    // Update broker's client count (buyers + suppliers)
+    setBrokers(brokers.map(b => 
+      b.id === selectedBroker.id 
+        ? { ...b, clientsManaged: selectedBuyers.length + selectedSuppliers.length }
+        : b
+    ))
+
+    showNotification(`Assignments updated for ${selectedBroker.name}!`, 'success')
+    setShowAssignmentModal(false)
+    setSelectedBroker(null)
+  }
+
+  const getAssignedBuyers = (brokerId) => {
+    const assignments = brokerAssignments[brokerId]
+    if (!assignments || !assignments.buyers) return []
+    // Filter buyers that still exist in the system
+    return availableBuyers.filter(b => assignments.buyers.includes(b.id))
+  }
+
+  const getAssignedSuppliers = (brokerId) => {
+    const assignments = brokerAssignments[brokerId]
+    if (!assignments || !assignments.suppliers) return []
+    // Filter suppliers that still exist in the system
+    return availableSuppliers.filter(s => assignments.suppliers.includes(s.id))
+  }
+
+  const handleDownloadDocument = (documentData) => {
+    try {
+      showNotification(`Downloading "${documentData.name}"...`, 'info')
+      
+      if (documentData.file) {
+        const url = window.URL.createObjectURL(documentData.file)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = documentData.fileName || documentData.name
+        
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
+        window.URL.revokeObjectURL(url)
+        showNotification(`"${documentData.name}" downloaded successfully!`, 'success')
+      } else {
+        const mimeType = documentData.fileType || 'application/pdf'
+        const extension = documentData.fileName ? documentData.fileName.split('.').pop() : 'pdf'
+        
+        let blob
+        if (mimeType.includes('pdf') || extension === 'pdf') {
+          const pdfContent = `%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/Resources <<
+/Font <<
+/F1 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+>>
+>>
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 100
+>>
+stream
+BT
+/F1 12 Tf
+50 700 Td
+(${documentData.name}) Tj
+0 -20 Td
+(Broker: ${selectedBroker?.name || 'N/A'}) Tj
+0 -20 Td
+(Date: ${new Date().toLocaleString()}) Tj
+ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000317 00000 n 
+trailer
+<<
+/Size 5
+/Root 1 0 R
+>>
+startxref
+466
+%%EOF`
+          blob = new Blob([pdfContent], { type: 'application/pdf' })
+        } else {
+          const textContent = `Document: ${documentData.name}
+Broker: ${selectedBroker?.name || 'N/A'}
+Email: ${selectedBroker?.email || 'N/A'}
+Date: ${new Date().toLocaleString()}`
+          blob = new Blob([textContent], { type: mimeType })
+        }
+        
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `${documentData.name.replace(/\s+/g, '_')}.${extension}`
+        
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
+        window.URL.revokeObjectURL(url)
+        showNotification(`"${documentData.name}" downloaded successfully!`, 'success')
+      }
+    } catch (error) {
+      console.error('Download error:', error)
+      showNotification('Failed to download document. Please try again.', 'error')
+    }
   }
 
   const getPerformanceColor = (performance) => {
@@ -120,31 +497,31 @@ function BrokerManagement() {
           <div className="stat-icon-bm">🤝</div>
           <div>
             <h3>Total Brokers</h3>
-            <p className="stat-value-bm">87</p>
-            <span className="stat-label">+12 this month</span>
+            <p className="stat-value-bm">{brokers.length}</p>
+            <span className="stat-label">{filteredBrokers.length} shown</span>
           </div>
         </div>
         <div className="stat-card-bm">
           <div className="stat-icon-bm">✅</div>
           <div>
             <h3>Active Brokers</h3>
-            <p className="stat-value-bm">73</p>
-            <span className="stat-label">84% active rate</span>
+            <p className="stat-value-bm">{brokers.filter(b => b.status === 'Active').length}</p>
+            <span className="stat-label">{brokers.length > 0 ? Math.round((brokers.filter(b => b.status === 'Active').length / brokers.length) * 100) : 0}% active rate</span>
           </div>
         </div>
         <div className="stat-card-bm">
           <div className="stat-icon-bm">🎯</div>
           <div>
             <h3>Total Deals</h3>
-            <p className="stat-value-bm">452</p>
-            <span className="stat-label">This quarter</span>
+            <p className="stat-value-bm">{brokers.reduce((sum, b) => sum + (b.successfulDeals || 0), 0)}</p>
+            <span className="stat-label">All time</span>
           </div>
         </div>
         <div className="stat-card-bm">
           <div className="stat-icon-bm">📋</div>
           <div>
             <h3>Purchase Orders</h3>
-            <p className="stat-value-bm">684</p>
+            <p className="stat-value-bm">{brokers.reduce((sum, b) => sum + (b.poCount || 0), 0)}</p>
             <span className="stat-label">Total POs</span>
           </div>
         </div>
@@ -157,25 +534,42 @@ function BrokerManagement() {
             type="text" 
             placeholder="Search by broker name or email..." 
             className="search-input-full"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
-          <select className="filter-select">
+          <select 
+            className="filter-select"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
             <option>All Status</option>
             <option>Active</option>
             <option>Inactive</option>
           </select>
-          <select className="filter-select">
+          <select 
+            className="filter-select"
+            value={filterPerformance}
+            onChange={(e) => setFilterPerformance(e.target.value)}
+          >
             <option>Performance</option>
             <option>Outstanding</option>
             <option>Excellent</option>
             <option>Good</option>
             <option>Average</option>
           </select>
-          <select className="filter-select">
+          <select 
+            className="filter-select"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+          >
             <option>Sort By</option>
             <option>Most Deals</option>
             <option>Most Clients</option>
             <option>Newest First</option>
           </select>
+          <button className="btn btn-outline clear-filters-btn" onClick={handleClearFilters}>
+            Clear Filters
+          </button>
         </div>
       </div>
 
@@ -196,7 +590,14 @@ function BrokerManagement() {
             </tr>
           </thead>
           <tbody>
-            {brokers.map((broker) => (
+            {filteredBrokers.length === 0 ? (
+              <tr>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                  {brokers.length === 0 ? 'No brokers yet. Click "Create New Broker" to add your first broker.' : 'No brokers found matching your criteria'}
+                </td>
+              </tr>
+            ) : (
+              filteredBrokers.map((broker) => (
               <tr key={broker.id}>
                 <td>
                   <div className="broker-cell-bm">
@@ -257,19 +658,63 @@ function BrokerManagement() {
                     >
                       ✏️
                     </button>
-                    <button className="action-btn-bm" title="Assign Clients">👥</button>
-                    <button className="action-btn-bm" title="View Documents">📄</button>
-                    <button className="action-btn-bm" title="Reset Password">🔑</button>
-                    <button className="action-btn-bm" title="More Options">⋮</button>
+                    <button 
+                      className="action-btn-bm" 
+                      title="Assign Buyers/Suppliers"
+                      onClick={() => handleManageAssignments(broker)}
+                    >
+                      👥
+                    </button>
+                    <button 
+                      className="action-btn-bm" 
+                      title="Toggle Status"
+                      onClick={() => handleToggleStatus(broker.id, broker.status)}
+                    >
+                      {broker.status === 'Active' ? '⏸️' : '▶️'}
+                    </button>
+                    <button 
+                      className="action-btn-bm" 
+                      title="Manage Documents"
+                      onClick={() => handleManageDocuments(broker)}
+                    >
+                      📄
+                    </button>
+                    <button 
+                      className="action-btn-bm" 
+                      title="Send Notification"
+                      onClick={() => handleManageNotifications(broker)}
+                    >
+                      🔔
+                    </button>
+                    <button 
+                      className="action-btn-bm" 
+                      title="Reset Password"
+                      onClick={() => handleResetPassword(broker)}
+                    >
+                      🔑
+                    </button>
+                    <button 
+                      className="action-btn-bm" 
+                      title="Delete Broker"
+                      onClick={() => handleDeleteBroker(broker.id)}
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
 
         {/* Mobile Card View */}
-        {brokers.map((broker) => (
+        {filteredBrokers.length === 0 ? (
+          <div className="no-results-mobile">
+            <p>{brokers.length === 0 ? 'No brokers yet. Click "Create New Broker" to add your first broker.' : 'No brokers found matching your criteria'}</p>
+          </div>
+        ) : (
+          filteredBrokers.map((broker) => (
           <div key={broker.id} className="broker-card-mobile">
             <div className="broker-card-header">
               <div className="broker-cell-bm">
@@ -331,8 +776,46 @@ function BrokerManagement() {
                 Edit Broker
               </button>
             </div>
+            <div className="broker-card-actions" style={{ marginTop: '8px' }}>
+              {broker.status === 'Active' ? (
+                <button 
+                  className="btn btn-warning"
+                  onClick={() => handleDeactivateBroker(broker.id)}
+                >
+                  ⏸️ Deactivate
+                </button>
+              ) : (
+                <button 
+                  className="btn btn-success"
+                  onClick={() => handleActivateBroker(broker.id)}
+                >
+                  ▶️ Activate
+                </button>
+              )}
+              <button 
+                className="btn btn-outline"
+                onClick={() => handleManageAssignments(broker)}
+              >
+                👥 Assign
+              </button>
+            </div>
+            <div className="broker-card-actions" style={{ marginTop: '8px' }}>
+              <button 
+                className="btn btn-outline"
+                onClick={() => handleManageDocuments(broker)}
+              >
+                📄 Documents
+              </button>
+              <button 
+                className="btn btn-outline"
+                onClick={() => handleManageNotifications(broker)}
+              >
+                🔔 Notify
+              </button>
+            </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* Broker Details Modal */}
@@ -398,6 +881,110 @@ function BrokerManagement() {
                     <label>Join Date</label>
                     <p>{selectedBroker.joinDate}</p>
                   </div>
+                  <div className="detail-item">
+                    <label>Documents</label>
+                    <p>{selectedBroker.documents || 0} uploaded</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Assignments Section */}
+              <div className="details-section">
+                <h4>Assigned Buyers ({getAssignedBuyers(selectedBroker.id).length})</h4>
+                {getAssignedBuyers(selectedBroker.id).length > 0 ? (
+                  <div className="assignments-list">
+                    {getAssignedBuyers(selectedBroker.id).map(buyer => (
+                      <div key={buyer.id} className="assignment-item">
+                        <span>👤 {buyer.name}</span>
+                        <span className="assignment-meta">{buyer.project} - {buyer.property}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-assignments">No buyers assigned yet</p>
+                )}
+              </div>
+
+              <div className="details-section">
+                <h4>Assigned Suppliers ({getAssignedSuppliers(selectedBroker.id).length})</h4>
+                {getAssignedSuppliers(selectedBroker.id).length > 0 ? (
+                  <div className="assignments-list">
+                    {getAssignedSuppliers(selectedBroker.id).map(supplier => (
+                      <div key={supplier.id} className="assignment-item">
+                        <span>🏭 {supplier.companyName}</span>
+                        <span className="assignment-meta">{supplier.category} - {supplier.location || 'Location N/A'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-assignments">No suppliers assigned yet</p>
+                )}
+              </div>
+
+              {selectedBroker.address && (
+                <div className="address-section">
+                  <label>Address</label>
+                  <p>{selectedBroker.address}</p>
+                </div>
+              )}
+
+              <div className="account-actions-section">
+                <h4>Account Actions</h4>
+                <div className="account-actions-grid">
+                  {selectedBroker.status === 'Active' ? (
+                    <button 
+                      className="btn btn-warning"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleDeactivateBroker(selectedBroker.id);
+                      }}
+                    >
+                      ⏸️ Deactivate Account
+                    </button>
+                  ) : (
+                    <button 
+                      className="btn btn-success"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleActivateBroker(selectedBroker.id);
+                      }}
+                    >
+                      ▶️ Activate Account
+                    </button>
+                  )}
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleManageAssignments(selectedBroker);
+                    }}
+                  >
+                    👥 Manage Assignments
+                  </button>
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => handleResetPassword(selectedBroker)}
+                  >
+                    🔑 Reset Password
+                  </button>
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleManageDocuments(selectedBroker);
+                    }}
+                  >
+                    📄 Manage Documents
+                  </button>
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleManageNotifications(selectedBroker);
+                    }}
+                  >
+                    🔔 Send Notification
+                  </button>
                 </div>
               </div>
 
@@ -419,26 +1006,47 @@ function BrokerManagement() {
               <button className="close-btn" onClick={() => setShowBrokerModal(false)}>×</button>
             </div>
             <div className="modal-body">
-              <form className="broker-form">
+              <form className="broker-form" onSubmit={handleSaveBroker}>
                 <div className="form-row">
                   <div className="form-group">
                     <label>Full Name *</label>
-                    <input type="text" placeholder="Enter full name" defaultValue={selectedBroker?.name} />
+                    <input 
+                      type="text" 
+                      name="name"
+                      placeholder="Enter full name" 
+                      defaultValue={selectedBroker?.name}
+                      required 
+                    />
                   </div>
                   <div className="form-group">
                     <label>Email *</label>
-                    <input type="email" placeholder="Enter email" defaultValue={selectedBroker?.email} />
+                    <input 
+                      type="email"
+                      name="email" 
+                      placeholder="Enter email" 
+                      defaultValue={selectedBroker?.email}
+                      required 
+                    />
                   </div>
                 </div>
 
                 <div className="form-row">
                   <div className="form-group">
                     <label>Phone Number *</label>
-                    <input type="tel" placeholder="Enter phone number" defaultValue={selectedBroker?.phone} />
+                    <input 
+                      type="tel"
+                      name="phone" 
+                      placeholder="Enter phone number" 
+                      defaultValue={selectedBroker?.phone}
+                      required 
+                    />
                   </div>
                   <div className="form-group">
                     <label>Status</label>
-                    <select defaultValue={selectedBroker?.status || 'Active'}>
+                    <select 
+                      name="status"
+                      defaultValue={selectedBroker?.status || 'Active'}
+                    >
                       <option>Active</option>
                       <option>Inactive</option>
                     </select>
@@ -447,12 +1055,20 @@ function BrokerManagement() {
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Commission Rate (%)</label>
-                    <input type="text" placeholder="e.g., 2.5" defaultValue={selectedBroker?.commission} />
+                    <label>Commission Rate</label>
+                    <input 
+                      type="text"
+                      name="commission" 
+                      placeholder="e.g., 2.5%" 
+                      defaultValue={selectedBroker?.commission}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Performance Rating</label>
-                    <select defaultValue={selectedBroker?.performance}>
+                    <select 
+                      name="performance"
+                      defaultValue={selectedBroker?.performance || 'Good'}
+                    >
                       <option>Outstanding</option>
                       <option>Excellent</option>
                       <option>Good</option>
@@ -462,35 +1078,50 @@ function BrokerManagement() {
                 </div>
 
                 <div className="form-group">
-                  <label>Assign to Clients (Optional)</label>
-                  <select multiple>
-                    <option>Rajesh Kumar - Legacy Heights</option>
-                    <option>Priya Sharma - Legacy Gardens</option>
-                    <option>Amit Patel - Legacy Towers</option>
-                  </select>
-                  <small>Hold Ctrl/Cmd to select multiple</small>
+                  <label>Address</label>
+                  <textarea 
+                    name="address"
+                    rows="3" 
+                    placeholder="Enter full address"
+                    defaultValue={selectedBroker?.address || ''}
+                  ></textarea>
                 </div>
 
                 <div className="form-group">
                   <label>Notes</label>
-                  <textarea rows="3" placeholder="Add any additional notes or comments"></textarea>
+                  <textarea 
+                    name="notes"
+                    rows="3" 
+                    placeholder="Add any additional notes or comments"
+                    defaultValue={selectedBroker?.notes || ''}
+                  ></textarea>
                 </div>
 
                 {!selectedBroker && (
                   <div className="form-row">
                     <div className="form-group">
                       <label>Password *</label>
-                      <input type="password" placeholder="Enter password" />
+                      <input 
+                        type="password"
+                        name="password" 
+                        placeholder="Enter password"
+                        required 
+                      />
                     </div>
                     <div className="form-group">
                       <label>Confirm Password *</label>
-                      <input type="password" placeholder="Confirm password" />
+                      <input 
+                        type="password"
+                        name="confirmPassword" 
+                        placeholder="Confirm password"
+                        required 
+                      />
                     </div>
                   </div>
                 )}
 
                 <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => setShowBrokerModal(false)}>Cancel</button>
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowBrokerModal(false); setSelectedBroker(null); }}>Cancel</button>
                   <button type="submit" className="btn btn-primary">
                     {selectedBroker ? 'Update Broker' : 'Create Broker'}
                   </button>
@@ -498,6 +1129,312 @@ function BrokerManagement() {
               </form>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Documents Management Modal */}
+      {showDocumentsModal && selectedBroker && (
+        <div className="modal-overlay" onClick={() => setShowDocumentsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Manage Documents - {selectedBroker.name}</h2>
+              <button className="close-btn" onClick={() => setShowDocumentsModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="documents-summary">
+                <p className="summary-text">
+                  Current Documents: <strong>{selectedBroker.documents || 0}</strong>
+                </p>
+                <p className="summary-text">
+                  Broker Email: <strong>{selectedBroker.email}</strong>
+                </p>
+              </div>
+
+              <h3 className="section-title">Upload New Document</h3>
+              <form className="document-form" onSubmit={handleUploadDocument}>
+                <div className="form-group">
+                  <label>Document Type *</label>
+                  <select name="documentType" required>
+                    <option value="">Select Document Type</option>
+                    <option>Contract Agreement</option>
+                    <option>Commission Document</option>
+                    <option>Client Assignment</option>
+                    <option>Performance Report</option>
+                    <option>KYC Documents</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Document Title *</label>
+                  <input 
+                    type="text" 
+                    name="documentTitle"
+                    placeholder="e.g., Q4 Performance Report"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Upload File *</label>
+                  <input 
+                    type="file" 
+                    name="document"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    required
+                    className="file-input"
+                  />
+                  <small>Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 10MB)</small>
+                </div>
+
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea 
+                    name="description"
+                    rows="3"
+                    placeholder="Add any notes or description about this document"
+                  ></textarea>
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => setShowDocumentsModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Upload Document</button>
+                </div>
+              </form>
+
+              <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Documents</h3>
+              <div className="recent-documents-list">
+                {brokerDocuments[selectedBroker.id] && brokerDocuments[selectedBroker.id].length > 0 ? (
+                  brokerDocuments[selectedBroker.id].map((doc) => (
+                    <div key={doc.id} className="document-item">
+                      <div className="document-icon">
+                        {doc.fileType?.includes('pdf') ? '📄' : 
+                         doc.fileType?.includes('image') ? '🖼️' : 
+                         doc.fileType?.includes('word') ? '📝' : '📄'}
+                      </div>
+                      <div className="document-info">
+                        <div className="document-name">{doc.name}</div>
+                        <div className="document-meta">
+                          {doc.uploadDate} • {doc.fileType?.split('/')[1]?.toUpperCase() || 'FILE'} • 
+                          {(doc.fileSize / 1024 / 1024).toFixed(2)} MB
+                        </div>
+                      </div>
+                      <button 
+                        className="action-btn-bm download-btn"
+                        onClick={() => handleDownloadDocument(doc)}
+                        title="Download"
+                      >
+                        ⬇️
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="no-documents">No documents uploaded yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Management Modal */}
+      {showNotificationsModal && selectedBroker && (
+        <div className="modal-overlay" onClick={() => setShowNotificationsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Send Notification - {selectedBroker.name}</h2>
+              <button className="close-btn" onClick={() => setShowNotificationsModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="documents-summary">
+                <p className="summary-text">
+                  Broker Email: <strong>{selectedBroker.email}</strong>
+                </p>
+                <p className="summary-text">
+                  Phone: <strong>{selectedBroker.phone}</strong>
+                </p>
+              </div>
+
+              <h3 className="section-title">Create New Notification</h3>
+              <form className="notification-form" onSubmit={handleSendNotification}>
+                <div className="form-group">
+                  <label>Notification Type *</label>
+                  <select name="notificationType" required>
+                    <option value="">Select Type</option>
+                    <option>New Client Assignment</option>
+                    <option>Commission Update</option>
+                    <option>Performance Review</option>
+                    <option>Meeting Scheduled</option>
+                    <option>Document Request</option>
+                    <option>General Announcement</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Notification Channel *</label>
+                  <div className="checkbox-group">
+                    <label className="checkbox-label">
+                      <input type="checkbox" name="channelApp" defaultChecked />
+                      <span>Mobile App Push</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input type="checkbox" name="channelEmail" defaultChecked />
+                      <span>Email</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input type="checkbox" name="channelSMS" />
+                      <span>SMS</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Notification Title *</label>
+                  <input 
+                    type="text" 
+                    name="notificationTitle"
+                    placeholder="e.g., New Client Assigned"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Message *</label>
+                  <textarea 
+                    name="notificationMessage"
+                    rows="4"
+                    placeholder="Enter your notification message here..."
+                    required
+                  ></textarea>
+                  <small>Character count: 0/500</small>
+                </div>
+
+                <div className="form-group">
+                  <label>Schedule</label>
+                  <select name="schedule">
+                    <option>Send Immediately</option>
+                    <option>Schedule for Later</option>
+                  </select>
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => setShowNotificationsModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Send Notification</button>
+                </div>
+              </form>
+
+              <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Notifications</h3>
+              <div className="recent-notifications-list">
+                <div className="notification-item">
+                  <div className="notification-icon success">✓</div>
+                  <div className="notification-info">
+                    <div className="notification-title">Commission Update Sent</div>
+                    <div className="notification-meta">Sent 1 day ago • Read</div>
+                  </div>
+                </div>
+                <div className="notification-item">
+                  <div className="notification-icon pending">📧</div>
+                  <div className="notification-info">
+                    <div className="notification-title">New Client Assignment</div>
+                    <div className="notification-meta">Sent 3 days ago • Delivered</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Buyers/Suppliers Modal */}
+      {showAssignmentModal && selectedBroker && (
+        <div className="modal-overlay" onClick={() => setShowAssignmentModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Assign Buyers & Suppliers - {selectedBroker.name}</h2>
+              <button className="close-btn" onClick={() => setShowAssignmentModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="documents-summary">
+                <p className="summary-text">
+                  Broker: <strong>{selectedBroker.name}</strong>
+                </p>
+                <p className="summary-text">
+                  Current Assignments: <strong>{getAssignedBuyers(selectedBroker.id).length} Buyers, {getAssignedSuppliers(selectedBroker.id).length} Suppliers</strong>
+                </p>
+                {(availableBuyers.length > 0 || availableSuppliers.length > 0) && (
+                  <p className="summary-text" style={{ fontSize: '12px', fontStyle: 'italic' }}>
+                    💡 Buyers synced from User Management, Suppliers from Supplier Management
+                  </p>
+                )}
+              </div>
+
+              <form className="assignment-form" onSubmit={handleSaveAssignments}>
+                <div className="assignment-section">
+                  <h3 className="section-title">Assign Buyers ({availableBuyers.length} available)</h3>
+                  {availableBuyers.length > 0 ? (
+                    <div className="assignment-checkboxes">
+                      {availableBuyers.map(buyer => (
+                        <label key={buyer.id} className="assignment-checkbox-label">
+                          <input 
+                            type="checkbox" 
+                            name="buyers"
+                            value={buyer.id}
+                            defaultChecked={brokerAssignments[selectedBroker.id]?.buyers?.includes(buyer.id)}
+                          />
+                          <div className="assignment-info">
+                            <span className="assignment-name">👤 {buyer.name}</span>
+                            <span className="assignment-details">{buyer.project} - {buyer.property}</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="no-buyers-available">
+                      <p>No buyers available. Please create users in User Management first.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="assignment-section">
+                  <h3 className="section-title">Assign Suppliers ({availableSuppliers.length} available)</h3>
+                  {availableSuppliers.length > 0 ? (
+                    <div className="assignment-checkboxes">
+                      {availableSuppliers.map(supplier => (
+                        <label key={supplier.id} className="assignment-checkbox-label">
+                          <input 
+                            type="checkbox" 
+                            name="suppliers"
+                            value={supplier.id}
+                            defaultChecked={brokerAssignments[selectedBroker.id]?.suppliers?.includes(supplier.id)}
+                          />
+                          <div className="assignment-info">
+                            <span className="assignment-name">🏭 {supplier.companyName}</span>
+                            <span className="assignment-details">{supplier.category} - {supplier.location || 'Location N/A'}</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="no-buyers-available">
+                      <p>No suppliers available. Please create suppliers in Supplier Management first.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => setShowAssignmentModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save Assignments</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`notification-toast ${notification.type}`}>
+          {notification.message}
         </div>
       )}
     </div>

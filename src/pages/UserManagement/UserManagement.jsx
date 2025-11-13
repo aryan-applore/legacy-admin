@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import './UserManagement.css'
 
 function UserManagement() {
@@ -15,11 +15,27 @@ function UserManagement() {
   const [filterPayment, setFilterPayment] = useState('Payment Status')
   const [notification, setNotification] = useState(null)
 
-  // Users State - starts empty
-  const [users, setUsers] = useState([])
+  // Users State - Load from localStorage
+  const [users, setUsers] = useState(() => {
+    const savedUsers = localStorage.getItem('legacy-admin-users')
+    return savedUsers ? JSON.parse(savedUsers) : []
+  })
   
   // Store uploaded documents with their file data
-  const [userDocuments, setUserDocuments] = useState({})
+  const [userDocuments, setUserDocuments] = useState(() => {
+    const savedDocs = localStorage.getItem('legacy-admin-documents')
+    return savedDocs ? JSON.parse(savedDocs) : {}
+  })
+
+  // Save users to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('legacy-admin-users', JSON.stringify(users))
+  }, [users])
+
+  // Save documents to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('legacy-admin-documents', JSON.stringify(userDocuments))
+  }, [userDocuments])
 
   // Filtered and Searched Users
   const filteredUsers = useMemo(() => {
@@ -76,6 +92,7 @@ function UserManagement() {
       status: formData.get('status'),
       project: formData.get('project'),
       property: formData.get('property'),
+      address: formData.get('address'),
       paymentStatus: selectedUser ? selectedUser.paymentStatus : 'Up to Date',
       joinDate: selectedUser ? selectedUser.joinDate : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       documents: selectedUser ? selectedUser.documents : 0,
@@ -107,13 +124,43 @@ function UserManagement() {
     showNotification(`Password reset link sent to ${user.email}`, 'info')
   }
 
-  const handleToggleStatus = (userId) => {
-    setUsers(users.map(u => 
-      u.id === userId 
-        ? { ...u, status: u.status === 'Active' ? 'Inactive' : 'Active' }
-        : u
-    ))
-    showNotification('User status updated!', 'success')
+  const handleToggleStatus = (userId, currentStatus) => {
+    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active'
+    const action = newStatus === 'Active' ? 'activate' : 'deactivate'
+    const user = users.find(u => u.id === userId)
+    
+    if (window.confirm(`Are you sure you want to ${action} ${user.name}'s account?`)) {
+      setUsers(users.map(u => 
+        u.id === userId 
+          ? { ...u, status: newStatus }
+          : u
+      ))
+      showNotification(`User account ${action}d successfully!`, 'success')
+    }
+  }
+
+  const handleActivateUser = (userId) => {
+    const user = users.find(u => u.id === userId)
+    if (window.confirm(`Activate ${user.name}'s account? They will regain access to the system.`)) {
+      setUsers(users.map(u => 
+        u.id === userId 
+          ? { ...u, status: 'Active' }
+          : u
+      ))
+      showNotification(`${user.name}'s account has been activated!`, 'success')
+    }
+  }
+
+  const handleDeactivateUser = (userId) => {
+    const user = users.find(u => u.id === userId)
+    if (window.confirm(`Deactivate ${user.name}'s account? They will lose access to the system.`)) {
+      setUsers(users.map(u => 
+        u.id === userId 
+          ? { ...u, status: 'Inactive' }
+          : u
+      ))
+      showNotification(`${user.name}'s account has been deactivated!`, 'success')
+    }
   }
 
   const handleClearFilters = () => {
@@ -485,8 +532,8 @@ This is a sample document for demonstration purposes.`
                     </button>
                     <button 
                       className="action-btn-um" 
-                      title="Toggle Status"
-                      onClick={() => handleToggleStatus(user.id)}
+                      title={user.status === 'Active' ? 'Deactivate Account' : 'Activate Account'}
+                      onClick={() => handleToggleStatus(user.id, user.status)}
                     >
                       {user.status === 'Active' ? '⏸️' : '▶️'}
                     </button>
@@ -580,6 +627,12 @@ This is a sample document for demonstration purposes.`
                 <span className="card-label">🎫 Tickets:</span>
                 <span className="tickets-count">{user.tickets}</span>
               </div>
+              {user.address && (
+                <div className="card-info-row">
+                  <span className="card-label">📍 Address:</span>
+                  <span>{user.address}</span>
+                </div>
+              )}
             </div>
 
             <div className="user-card-actions">
@@ -597,17 +650,40 @@ This is a sample document for demonstration purposes.`
               </button>
             </div>
             <div className="user-card-actions" style={{ marginTop: '8px' }}>
+              {user.status === 'Active' ? (
+                <button 
+                  className="btn btn-warning"
+                  onClick={() => handleDeactivateUser(user.id)}
+                >
+                  ⏸️ Deactivate
+                </button>
+              ) : (
+                <button 
+                  className="btn btn-success"
+                  onClick={() => handleActivateUser(user.id)}
+                >
+                  ▶️ Activate
+                </button>
+              )}
               <button 
                 className="btn btn-outline"
                 onClick={() => handleManageDocuments(user)}
               >
                 📄 Documents
               </button>
+            </div>
+            <div className="user-card-actions" style={{ marginTop: '8px' }}>
               <button 
                 className="btn btn-outline"
                 onClick={() => handleManageNotifications(user)}
               >
                 🔔 Notify
+              </button>
+              <button 
+                className="btn btn-outline"
+                onClick={() => handleResetPassword(user)}
+              >
+                🔑 Reset Password
               </button>
             </div>
           </div>
@@ -666,6 +742,64 @@ This is a sample document for demonstration purposes.`
                 <div className="detail-item">
                   <label>Support Tickets</label>
                   <p>{selectedUser.tickets} open</p>
+                </div>
+              </div>
+
+              {selectedUser.address && (
+                <div className="address-section">
+                  <label>Address</label>
+                  <p>{selectedUser.address}</p>
+                </div>
+              )}
+
+              <div className="account-actions-section">
+                <h4>Account Actions</h4>
+                <div className="account-actions-grid">
+                  {selectedUser.status === 'Active' ? (
+                    <button 
+                      className="btn btn-warning"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleDeactivateUser(selectedUser.id);
+                      }}
+                    >
+                      ⏸️ Deactivate Account
+                    </button>
+                  ) : (
+                    <button 
+                      className="btn btn-success"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handleActivateUser(selectedUser.id);
+                      }}
+                    >
+                      ▶️ Activate Account
+                    </button>
+                  )}
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => handleResetPassword(selectedUser)}
+                  >
+                    🔑 Reset Password
+                  </button>
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleManageDocuments(selectedUser);
+                    }}
+                  >
+                    📄 Manage Documents
+                  </button>
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleManageNotifications(selectedUser);
+                    }}
+                  >
+                    🔔 Send Notification
+                  </button>
                 </div>
               </div>
 
