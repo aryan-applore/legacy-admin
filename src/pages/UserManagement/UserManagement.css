@@ -172,6 +172,7 @@
   border-collapse: separate;
   border-spacing: 0;
   background: hsl(var(--card));
+  position: relative;
 }
 
 .users-table-um thead {
@@ -206,6 +207,7 @@
 
 .users-table-um tbody {
   background: hsl(var(--card));
+  position: relative;
 }
 
 .users-table-um td {
@@ -214,10 +216,27 @@
   font-size: 14px;
   background: hsl(var(--card));
   transition: all 0.2s ease;
+  position: relative;
+  overflow: visible;
+}
+
+.users-table-um td:last-child {
+  overflow: visible;
 }
 
 .users-table-um tbody tr {
   transition: all 0.2s ease;
+  position: relative;
+}
+
+.users-table-um tbody tr.dropdown-open {
+  z-index: 100;
+}
+
+.users-table-um tbody tr.dropdown-open td:last-child {
+  overflow: visible;
+  position: relative;
+  z-index: 10002;
 }
 
 .users-table-um tbody tr:hover {
@@ -392,7 +411,14 @@
 .action-menu-container {
   position: relative;
   display: inline-block;
+  z-index: 1;
 }
+
+.action-menu-container.dropdown-open {
+  z-index: 10000;
+  position: relative;
+}
+
 
 .action-menu-btn {
   background: hsl(var(--muted));
@@ -419,17 +445,41 @@
 
 .action-menu-dropdown {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 8px);
   right: 0;
-  margin-top: 8px;
   background: hsl(var(--popover));
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
   min-width: 180px;
-  z-index: 1000;
+  z-index: 10001;
   border: 1px solid hsl(var(--border));
-  overflow: hidden;
+  overflow: visible;
   animation: slideDown 0.2s ease-out;
+}
+
+.action-menu-dropdown::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 8px solid hsl(var(--border));
+}
+
+.action-menu-dropdown::after {
+  content: '';
+  position: absolute;
+  top: -7px;
+  right: 12px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 8px solid hsl(var(--popover));
+  z-index: 1;
 }
 
 @keyframes slideDown {
@@ -457,6 +507,7 @@
   color: hsl(var(--foreground));
   transition: all 0.2s ease;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .action-menu-item:hover {
@@ -560,28 +611,38 @@
   right: 20px;
   padding: 14px 20px;
   border-radius: 8px;
-  background: hsl(var(--card));
+  background: hsl(var(--card)) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 9999;
   animation: slideIn 0.3s ease-out;
   font-weight: 500;
   min-width: 250px;
   border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground)) !important;
 }
 
 .notification-toast.success {
   border-left: 4px solid hsl(142 76% 36%);
-  color: hsl(142 76% 36%);
+  background: hsl(142 76% 36%) !important;
+  color: white !important;
 }
 
 .notification-toast.error {
   border-left: 4px solid hsl(var(--destructive));
-  color: hsl(var(--destructive));
+  background: hsl(var(--destructive)) !important;
+  color: white !important;
 }
 
 .notification-toast.info {
   border-left: 4px solid hsl(var(--primary));
-  color: hsl(var(--primary));
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.notification-toast.warning {
+  border-left: 4px solid hsl(38 92% 50%);
+  background: hsl(38 92% 50%) !important;
+  color: white !important;
 }
 
 @keyframes slideIn {
@@ -936,6 +997,11 @@
     right: 0;
     left: auto;
     min-width: 200px;
+  }
+  
+  .action-menu-dropdown::before,
+  .action-menu-dropdown::after {
+    right: 16px;
   }
 
   .modal-content {

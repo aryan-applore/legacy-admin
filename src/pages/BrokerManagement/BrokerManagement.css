@@ -158,6 +158,7 @@
   font-size: 14px;
   background: hsl(var(--card));
   transition: all 0.2s ease;
+  position: relative;
 }
 
 .brokers-table-bm tbody tr {
@@ -289,6 +290,7 @@
 .menu-button-container {
   position: relative;
   display: inline-block;
+  z-index: 1;
 }
 
 .menu-button-bm {
@@ -319,7 +321,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  z-index: 9999;
   min-width: 200px;
   overflow: hidden;
   animation: dropdownFadeIn 0.15s ease-out;

@@ -45,6 +45,44 @@ function PropertyManagement() {
   // Projects list for filter
   const [projects, setProjects] = useState([])
 
+  // Helper function to format location as string
+  const formatLocation = (location) => {
+    if (!location) return 'N/A'
+    if (typeof location === 'string') return location
+    if (location.city && location.state) {
+      return `${location.city}, ${location.state}`
+    }
+    if (location.city) return location.city
+    if (location.address) return location.address
+    return 'N/A'
+  }
+
+  // Helper function to get project name from projectId
+  const getProjectName = (projectId) => {
+    if (!projectId) return 'N/A'
+    const project = projects.find(p => p.id === projectId || p._id === projectId)
+    return project?.name || 'N/A'
+  }
+
+  // Helper function to get status (handle both old and new format)
+  const getStatus = (property) => {
+    return property.status?.toLowerCase() || 'active'
+  }
+
+  // Helper function to get progress data (handle both old and new format)
+  const getProgress = (property) => {
+    if (property.progress) {
+      return {
+        percentage: property.progress.percentage || 0,
+        stage: property.progress.stage || ''
+      }
+    }
+    return {
+      percentage: property.progressPercentage || 0,
+      stage: property.currentStage || ''
+    }
+  }
+
   // Fetch projects for filter
   useEffect(() => {
     const fetchProjects = async () => {
@@ -93,9 +131,11 @@ function PropertyManagement() {
     return properties.filter(property => {
       // Search filter
       const searchLower = searchQuery.toLowerCase()
+      const locationStr = formatLocation(property.location)
+      const projectName = getProjectName(property.projectId)
       const matchesSearch = 
         property.flatNo?.toLowerCase().includes(searchLower) ||
-        property.projectName?.toLowerCase().includes(searchLower) ||
+        projectName?.toLowerCase().includes(searchLower) ||
         (property.users && property.users.some(u => 
           u?.name?.toLowerCase().includes(searchLower) || 
           u?.email?.toLowerCase().includes(searchLower)
@@ -104,19 +144,20 @@ function PropertyManagement() {
           property.user?.name?.toLowerCase().includes(searchLower) ||
           property.user?.email?.toLowerCase().includes(searchLower)
         )) ||
-        property.location?.toLowerCase().includes(searchLower)
+        locationStr?.toLowerCase().includes(searchLower)
 
       // Project filter
       const matchesProject = 
-        filterProject === 'All Projects' || property.projectName === filterProject
+        filterProject === 'All Projects' || projectName === filterProject
 
       // Status filter
+      const status = getStatus(property)
       const matchesStatus = 
-        filterStatus === 'All Status' || property.status === filterStatus
+        filterStatus === 'All Status' || status === filterStatus.toLowerCase()
 
       return matchesSearch && matchesProject && matchesStatus
     })
-  }, [properties, searchQuery, filterProject, filterStatus])
+  }, [properties, searchQuery, filterProject, filterStatus, projects])
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
@@ -170,10 +211,13 @@ function PropertyManagement() {
   const handleEditProperty = async (property) => {
     setSelectedProperty(property)
     
+    // Get progress data (handle both old and new format)
+    const progress = getProgress(property)
+    
     // Normalize currentStage value to match radio button options (same logic as getDisplayStage)
     let normalizedStage = ''
-    if (property.currentStage && property.currentStage.trim() !== '') {
-      const stageLower = property.currentStage.toLowerCase()
+    if (progress.stage && progress.stage.trim() !== '') {
+      const stageLower = progress.stage.toLowerCase()
       if (stageLower.includes('foundation')) {
         normalizedStage = 'foundation'
       } else if (stageLower.includes('structure')) {
@@ -203,9 +247,9 @@ function PropertyManagement() {
         pricePerSqft: property.pricing?.pricePerSqft || '',
         bookingAmount: property.pricing?.bookingAmount || ''
       },
-      status: property.status || 'active',
+      status: getStatus(property),
       possessionDate: property.possessionDate ? new Date(property.possessionDate).toISOString().split('T')[0] : '',
-      progressPercentage: property.progressPercentage || 0,
+      progressPercentage: progress.percentage || 0,
       currentStage: normalizedStage
     })
     
@@ -423,19 +467,21 @@ function PropertyManagement() {
     })
   }
 
-  const handleUploadGalleryImage = async (url, caption) => {
-    if (!selectedProperty || !url) return
+  const handleUploadGalleryImage = async (file, caption) => {
+    if (!selectedProperty || !file) return
 
     try {
+      // Create FormData for file upload
+      const formData = new FormData()
+      formData.append('image', file)
+      if (caption) {
+        formData.append('caption', caption)
+      }
+
       const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/gallery`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          url,
-          caption: caption || ''
-        })
+        body: formData
+        // Don't set Content-Type header - browser will set it automatically with boundary for FormData
       })
 
       const data = await response.json()
@@ -461,10 +507,10 @@ function PropertyManagement() {
   // Get unique project names for filter
   const uniqueProjects = useMemo(() => {
     const projectNames = properties
-      .map(p => p.projectName)
-      .filter((name, index, self) => name && self.indexOf(name) === index)
+      .map(p => getProjectName(p.projectId))
+      .filter((name, index, self) => name && name !== 'N/A' && self.indexOf(name) === index)
     return projectNames.sort()
-  }, [properties])
+  }, [properties, projects])
 
   // Normalize current stage for display (matches radio button values)
   const getDisplayStage = (stage) => {
@@ -508,16 +554,16 @@ function PropertyManagement() {
           <div className="stat-icon-pm"><CheckCircle size={24} /></div>
           <div>
             <h3>Active Properties</h3>
-            <p className="stat-value-pm">{properties.filter(p => p.status === 'active').length}</p>
-            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => p.status === 'active').length / properties.length) * 100) : 0}% active</span>
+            <p className="stat-value-pm">{properties.filter(p => getStatus(p) === 'active').length}</p>
+            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => getStatus(p) === 'active').length / properties.length) * 100) : 0}% active</span>
           </div>
         </div>
         <div className="stat-card-pm">
           <div className="stat-icon-pm"><XCircle size={24} /></div>
           <div>
             <h3>Completed</h3>
-            <p className="stat-value-pm">{properties.filter(p => p.status === 'completed').length}</p>
-            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => p.status === 'completed').length / properties.length) * 100) : 0}% completed</span>
+            <p className="stat-value-pm">{properties.filter(p => getStatus(p) === 'completed').length}</p>
+            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => getStatus(p) === 'completed').length / properties.length) * 100) : 0}% completed</span>
           </div>
         </div>
         <div className="stat-card-pm">
@@ -619,7 +665,7 @@ function PropertyManagement() {
                       )}
                       <div className="property-meta">
                         <MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                        {property.location}
+                        {formatLocation(property.location)}
                       </div>
                     </div>
                   </div>
@@ -627,21 +673,21 @@ function PropertyManagement() {
                 <td>
                   <div className="project-info-pm">
                     <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
-                    {property.projectName || 'N/A'}
+                    {getProjectName(property.projectId)}
                   </div>
                 </td>
                 <td>
                   <span style={{ 
                     fontWeight: '500',
-                    color: property.currentStage && property.currentStage.trim() !== '' ? 'var(--text-primary)' : 'var(--text-secondary)'
+                    color: getProgress(property).stage && getProgress(property).stage.trim() !== '' ? 'var(--text-primary)' : 'var(--text-secondary)'
                   }}>
-                    {getDisplayStage(property.currentStage)}
+                    {getDisplayStage(getProgress(property).stage)}
                   </span>
                 </td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
                     <span style={{ fontWeight: '600', minWidth: '50px', fontSize: '0.95em' }}>
-                      {property.progressPercentage || 0}%
+                      {getProgress(property).percentage || 0}%
                     </span>
                     <div style={{ 
                       flex: 1, 
@@ -655,7 +701,7 @@ function PropertyManagement() {
                     }}>
                       <div 
                         style={{ 
-                          width: `${Math.min(property.progressPercentage || 0, 100)}%`, 
+                          width: `${Math.min(getProgress(property).percentage || 0, 100)}%`, 
                           height: '100%', 
                           backgroundColor: 'var(--primary-color, #4CAF50)',
                           transition: 'width 0.3s ease',
@@ -667,11 +713,11 @@ function PropertyManagement() {
                 </td>
                 <td>
                   <span className={`status-badge ${
-                    property.status === 'active' ? 'status-success' : 
-                    property.status === 'completed' ? 'status-info' : 
+                    getStatus(property) === 'active' ? 'status-success' : 
+                    getStatus(property) === 'completed' ? 'status-info' : 
                     'status-error'
                   }`}>
-                    {property.status || 'active'}
+                    {getStatus(property)}
                   </span>
                 </td>
                 <td>
@@ -726,21 +772,21 @@ function PropertyManagement() {
                 </div>
                 <div className="detail-item">
                   <label>Project</label>
-                  <p>{selectedProperty.projectName || 'N/A'}</p>
+                  <p>{getProjectName(selectedProperty.projectId)}</p>
                 </div>
                 <div className="detail-item">
                   <label>Location</label>
-                  <p>{selectedProperty.location || 'N/A'}</p>
+                  <p>{formatLocation(selectedProperty.location)}</p>
                 </div>
                 <div className="detail-item">
                   <label>Status</label>
                   <p>
                     <span className={`status-badge ${
-                      selectedProperty.status === 'active' ? 'status-success' : 
-                      selectedProperty.status === 'completed' ? 'status-info' : 
+                      getStatus(selectedProperty) === 'active' ? 'status-success' : 
+                      getStatus(selectedProperty) === 'completed' ? 'status-info' : 
                       'status-error'
                     }`}>
-                      {selectedProperty.status || 'active'}
+                      {getStatus(selectedProperty)}
                     </span>
                   </p>
                 </div>
@@ -748,7 +794,7 @@ function PropertyManagement() {
                   <label>Progress Percentage</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ fontWeight: '600', fontSize: '1em' }}>
-                      {selectedProperty.progressPercentage || 0}%
+                      {getProgress(selectedProperty).percentage || 0}%
                     </span>
                     <div style={{ 
                       flex: 1, 
@@ -760,7 +806,7 @@ function PropertyManagement() {
                     }}>
                       <div 
                         style={{ 
-                          width: `${Math.min(selectedProperty.progressPercentage || 0, 100)}%`, 
+                          width: `${Math.min(getProgress(selectedProperty).percentage || 0, 100)}%`, 
                           height: '100%', 
                           backgroundColor: 'var(--primary-color, #4CAF50)',
                           transition: 'width 0.3s ease',
@@ -772,7 +818,7 @@ function PropertyManagement() {
                 </div>
                 <div className="detail-item">
                   <label>Current Stage</label>
-                  <p>{getDisplayStage(selectedProperty.currentStage)}</p>
+                  <p>{getDisplayStage(getProgress(selectedProperty).stage)}</p>
                 </div>
                 {selectedProperty.specifications?.area && (
                   <div className="detail-item">

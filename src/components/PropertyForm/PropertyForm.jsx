@@ -10,8 +10,9 @@ function PropertyForm({
   loadingGallery = false,
   onUploadGalleryImage
 }) {
-  const [galleryUrl, setGalleryUrl] = useState('')
+  const [galleryFile, setGalleryFile] = useState(null)
   const [galleryCaption, setGalleryCaption] = useState('')
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   // Use propertyData directly - it's controlled by parent
   const formData = propertyData || {
@@ -57,11 +58,42 @@ function PropertyForm({
     }
   }
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file')
+        e.target.value = ''
+        return
+      }
+      // Validate file size (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB')
+        e.target.value = ''
+        return
+      }
+      setGalleryFile(file)
+    }
+  }
+
   const handleUploadGallery = async () => {
-    if (galleryUrl && onUploadGalleryImage) {
-      await onUploadGalleryImage(galleryUrl, galleryCaption)
-      setGalleryUrl('')
-      setGalleryCaption('')
+    if (galleryFile && onUploadGalleryImage) {
+      setUploadingImage(true)
+      try {
+        await onUploadGalleryImage(galleryFile, galleryCaption)
+        setGalleryFile(null)
+        setGalleryCaption('')
+        // Reset file input
+        const fileInput = document.getElementById('gallery-file-input')
+        if (fileInput) {
+          fileInput.value = ''
+        }
+      } catch (error) {
+        console.error('Error uploading image:', error)
+      } finally {
+        setUploadingImage(false)
+      }
     }
   }
 
@@ -445,18 +477,28 @@ function PropertyForm({
           )}
           <div style={{ marginTop: '12px' }}>
             <input
-              type="text"
-              placeholder="Image URL"
-              value={galleryUrl}
-              onChange={(e) => setGalleryUrl(e.target.value)}
+              id="gallery-file-input"
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
               style={{ 
                 width: '100%', 
                 padding: '8px', 
                 marginBottom: '8px',
                 border: '1px solid #ddd',
-                borderRadius: '4px'
+                borderRadius: '4px',
+                cursor: 'pointer'
               }}
             />
+            {galleryFile && (
+              <p style={{ 
+                fontSize: '0.875em', 
+                color: 'var(--text-secondary)', 
+                marginBottom: '8px' 
+              }}>
+                Selected: {galleryFile.name}
+              </p>
+            )}
             <input
               type="text"
               placeholder="Caption (optional)"
@@ -473,9 +515,9 @@ function PropertyForm({
             <button 
               className="btn btn-primary" 
               onClick={handleUploadGallery}
-              disabled={!galleryUrl}
+              disabled={!galleryFile || uploadingImage}
             >
-              Upload Gallery Image
+              {uploadingImage ? 'Uploading...' : 'Upload Gallery Image'}
             </button>
           </div>
         </div>
