@@ -12,9 +12,39 @@ import {
   Building,
   User,
   MapPin,
-  Plus
+  Plus,
+  MoreHorizontal
 } from 'lucide-react'
 import PropertyForm from '../../components/PropertyForm/PropertyForm'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
@@ -158,6 +188,11 @@ function PropertyManagement() {
       return matchesSearch && matchesProject && matchesStatus
     })
   }, [properties, searchQuery, filterProject, filterStatus, projects])
+
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
@@ -527,6 +562,170 @@ function PropertyManagement() {
     return stage.charAt(0).toUpperCase() + stage.slice(1).toLowerCase()
   }
 
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      id: "propertyDetails",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Property Details" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        return (
+          <div className="property-cell-pm">
+            <div className="property-icon-pm">
+              <Home size={20} />
+            </div>
+            <div>
+              <div className="property-name-pm">Flat {property.flatNo}</div>
+              {property.buildingName && (
+                <div className="property-meta">{property.buildingName}</div>
+              )}
+              <div className="property-meta">
+                <MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                {formatLocation(property.location)}
+              </div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      id: "project",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Project" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        return (
+          <div className="project-info-pm">
+            <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
+            {getProjectName(property.projectId)}
+          </div>
+        )
+      },
+    },
+    {
+      id: "currentStage",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Current Stage" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const progress = getProgress(property)
+        return (
+          <span style={{ 
+            fontWeight: '500',
+            color: progress.stage && progress.stage.trim() !== '' ? 'var(--text-primary)' : 'var(--text-secondary)'
+          }}>
+            {getDisplayStage(progress.stage)}
+          </span>
+        )
+      },
+    },
+    {
+      id: "progressPercentage",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Progress Percentage" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const progress = getProgress(property)
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+            <span style={{ fontWeight: '600', minWidth: '50px', fontSize: '0.95em' }}>
+              {progress.percentage || 0}%
+            </span>
+            <div style={{ 
+              flex: 1, 
+              height: '10px', 
+              backgroundColor: '#e0e0e0', 
+              borderRadius: '5px', 
+              overflow: 'hidden',
+              minWidth: '120px',
+              maxWidth: '200px',
+              position: 'relative'
+            }}>
+              <div 
+                style={{ 
+                  width: `${Math.min(progress.percentage || 0, 100)}%`, 
+                  height: '100%', 
+                  backgroundColor: 'var(--primary-color, #4CAF50)',
+                  transition: 'width 0.3s ease',
+                  borderRadius: '5px'
+                }}
+              ></div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const status = getStatus(property)
+        return (
+          <span className={`status-badge ${
+            status === 'active' ? 'status-success' : 
+            status === 'completed' ? 'status-info' : 
+            'status-error'
+          }`}>
+            {status}
+          </span>
+        )
+      },
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const property = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(property)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditProperty(property)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Property
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: filteredProperties,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
+
   return (
     <div className="property-management-page">
       <div className="page-header">
@@ -632,117 +831,72 @@ function PropertyManagement() {
             </button>
           </div>
         ) : (
-        <table className="properties-table-pm">
-          <thead>
-            <tr>
-              <th>Property Details</th>
-              <th>Project</th>
-              <th>Current Stage</th>
-              <th>Progress Percentage</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProperties.length === 0 ? (
-              <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  {properties.length === 0 ? 'No properties found. Properties will appear here when users are assigned to projects.' : 'No properties found matching your criteria'}
-                </td>
-              </tr>
-            ) : (
-              filteredProperties.map((property) => (
-              <tr key={property.id}>
-                <td>
-                  <div className="property-cell-pm">
-                    <div className="property-icon-pm">
-                      <Home size={20} />
-                    </div>
-                    <div>
-                      <div className="property-name-pm">Flat {property.flatNo}</div>
-                      {property.buildingName && (
-                        <div className="property-meta">{property.buildingName}</div>
-                      )}
-                      <div className="property-meta">
-                        <MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                        {formatLocation(property.location)}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div className="project-info-pm">
-                    <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
-                    {getProjectName(property.projectId)}
-                  </div>
-                </td>
-                <td>
-                  <span style={{ 
-                    fontWeight: '500',
-                    color: getProgress(property).stage && getProgress(property).stage.trim() !== '' ? 'var(--text-primary)' : 'var(--text-secondary)'
-                  }}>
-                    {getDisplayStage(getProgress(property).stage)}
-                  </span>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                    <span style={{ fontWeight: '600', minWidth: '50px', fontSize: '0.95em' }}>
-                      {getProgress(property).percentage || 0}%
-                    </span>
-                    <div style={{ 
-                      flex: 1, 
-                      height: '10px', 
-                      backgroundColor: '#e0e0e0', 
-                      borderRadius: '5px', 
-                      overflow: 'hidden',
-                      minWidth: '120px',
-                      maxWidth: '200px',
-                      position: 'relative'
-                    }}>
-                      <div 
-                        style={{ 
-                          width: `${Math.min(getProgress(property).percentage || 0, 100)}%`, 
-                          height: '100%', 
-                          backgroundColor: 'var(--primary-color, #4CAF50)',
-                          transition: 'width 0.3s ease',
-                          borderRadius: '5px'
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span className={`status-badge ${
-                    getStatus(property) === 'active' ? 'status-success' : 
-                    getStatus(property) === 'completed' ? 'status-info' : 
-                    'status-error'
-                  }`}>
-                    {getStatus(property)}
-                  </span>
-                </td>
-                <td>
-                  <div className="action-buttons">
-                    <button 
-                      className="action-btn-pm" 
-                      title="View Details"
-                      onClick={() => handleViewDetails(property)}
-                    >
-                      <Eye size={16} />
-                    </button>
-                    <button 
-                      className="action-btn-pm" 
-                      title="Edit Property"
-                      onClick={() => handleEditProperty(property)}
-                    >
-                      <Edit size={16} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+          <>
+            <div className="flex items-center py-4">
+              <Input
+                placeholder="Filter by flat number or project..."
+                value={(table.getColumn("propertyDetails")?.getFilterValue() ?? "")}
+                onChange={(event) =>
+                  table.getColumn("propertyDetails")?.setFilterValue(event.target.value)
+                }
+                className="max-w-sm"
+              />
+              <DataTableViewOptions table={table} />
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        return (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && "selected"}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        {properties.length === 0 ? 'No properties found. Properties will appear here when users are assigned to projects.' : 'No properties found matching your criteria'}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="py-4">
+              <DataTablePagination table={table} />
+            </div>
+          </>
         )}
       </div>
 

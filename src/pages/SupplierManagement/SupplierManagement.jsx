@@ -1,5 +1,35 @@
 import { useState, useMemo, useEffect } from 'react'
 import './SupplierManagement.css'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { MoreHorizontal } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 function SupplierManagement() {
   const [showSupplierModal, setShowSupplierModal] = useState(false)
@@ -153,6 +183,11 @@ function SupplierManagement() {
       return matchesSearch && matchesCategory && matchesStatus && matchesVerification
     })
   }, [suppliers, searchQuery, filterCategory, filterStatus, filterVerification])
+
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
@@ -600,6 +635,191 @@ function SupplierManagement() {
     }
   }
 
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      accessorKey: "companyName",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Company" />
+      ),
+      cell: ({ row }) => {
+        const supplier = row.original
+        return (
+          <div className="supplier-cell">
+            <div className="supplier-avatar">
+              {supplier.companyName.charAt(0)}
+            </div>
+            <div>
+              <div className="supplier-name">{supplier.companyName}</div>
+              <div className="supplier-meta">{supplier.email}</div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "contactPerson",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Contact Person" />
+      ),
+      cell: ({ row }) => {
+        const supplier = row.original
+        return (
+          <div>
+            <div className="contact-name">{supplier.contactPerson}</div>
+            <div className="supplier-meta">{supplier.phone}</div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "category",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Category" />
+      ),
+    },
+    {
+      accessorKey: "materialType",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Material Type" />
+      ),
+      cell: ({ row }) => row.original.materialType || 'Various',
+    },
+    {
+      accessorKey: "gstNumber",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="GST Number" />
+      ),
+      cell: ({ row }) => (
+        <span className="gst-text">{row.original.gstNumber || 'N/A'}</span>
+      ),
+    },
+    {
+      accessorKey: "location",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Location" />
+      ),
+      cell: ({ row }) => row.original.location || 'N/A',
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        return (
+          <span className={`status-badge ${status === 'Active' ? 'status-success' : 'status-error'}`}>
+            {status}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: "verificationStatus",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Verification" />
+      ),
+      cell: ({ row }) => {
+        const status = row.original.verificationStatus
+        return (
+          <span className={`status-badge ${
+            status === 'Approved' ? 'status-success' : 
+            status === 'Pending' ? 'status-warning' : 
+            'status-error'
+          }`}>
+            {status}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: "documents",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Docs" />
+      ),
+      cell: ({ row }) => (
+        <span className="docs-count">{row.original.documents || 0}</span>
+      ),
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const supplier = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(supplier)}>
+                👁️ View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditSupplier(supplier)}>
+                ✏️ Edit
+              </DropdownMenuItem>
+              {supplier.verificationStatus === 'Pending' && (
+                <>
+                  <DropdownMenuItem onClick={() => handleApproveSupplier(supplier.id)}>
+                    ✅ Approve
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleRejectSupplier(supplier.id)}>
+                    ❌ Reject
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => supplier.status === 'Active' ? handleDeactivateSupplier(supplier.id) : handleActivateSupplier(supplier.id)}>
+                {supplier.status === 'Active' ? '⏸️ Deactivate' : '▶️ Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageBrokers(supplier)}>
+                🤝 Assign Brokers
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleViewPerformance(supplier)}>
+                📊 Performance History
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleViewFulfillment(supplier)}>
+                🚚 Fulfillment Record
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleResetPassword(supplier)}>
+                🔑 Reset Password
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageDocuments(supplier)}>
+                📄 Documents
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleDeleteSupplier(supplier.id)}>
+                🗑️ Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: filteredSuppliers,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
+
   return (
     <div className="supplier-management-page">
       <div className="page-header">
@@ -700,93 +920,70 @@ function SupplierManagement() {
 
       {/* Suppliers Table */}
       <div className="card suppliers-table-card">
-        <table className="suppliers-table">
-          <thead>
-            <tr>
-              <th>Company</th>
-              <th>Contact Person</th>
-              <th>Category</th>
-              <th>Material Type</th>
-              <th>GST Number</th>
-              <th>Location</th>
-              <th>Status</th>
-              <th>Verification</th>
-              <th>Docs</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSuppliers.length === 0 ? (
-              <tr>
-                <td colSpan="10" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  {suppliers.length === 0 ? 'No suppliers yet. Click "Create New Supplier" to add your first supplier.' : 'No suppliers found matching your criteria'}
-                </td>
-              </tr>
-            ) : (
-              filteredSuppliers.map((supplier) => (
-              <tr key={supplier.id}>
-                <td>
-                  <div className="supplier-cell">
-                    <div className="supplier-avatar">
-                      {supplier.companyName.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="supplier-name">{supplier.companyName}</div>
-                      <div className="supplier-meta">{supplier.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div>
-                    <div className="contact-name">{supplier.contactPerson}</div>
-                    <div className="supplier-meta">{supplier.phone}</div>
-                  </div>
-                </td>
-                <td>{supplier.category}</td>
-                <td>{supplier.materialType || 'Various'}</td>
-                <td><span className="gst-text">{supplier.gstNumber || 'N/A'}</span></td>
-                <td>{supplier.location || 'N/A'}</td>
-                <td>
-                  <span className={`status-badge ${supplier.status === 'Active' ? 'status-success' : 'status-error'}`}>
-                    {supplier.status}
-                  </span>
-                </td>
-                <td>
-                  <span className={`status-badge ${
-                    supplier.verificationStatus === 'Approved' ? 'status-success' : 
-                    supplier.verificationStatus === 'Pending' ? 'status-warning' : 
-                    'status-error'
-                  }`}>
-                    {supplier.verificationStatus}
-                  </span>
-                </td>
-                <td><span className="docs-count">{supplier.documents || 0}</span></td>
-                <td>
-                  <div className="action-buttons">
-                    <button className="action-btn" title="View Details" onClick={() => handleViewDetails(supplier)}>👁️</button>
-                    <button className="action-btn" title="Edit" onClick={() => handleEditSupplier(supplier)}>✏️</button>
-                    {supplier.verificationStatus === 'Pending' && (
-                      <>
-                        <button className="action-btn" title="Approve" onClick={() => handleApproveSupplier(supplier.id)}>✅</button>
-                        <button className="action-btn" title="Reject" onClick={() => handleRejectSupplier(supplier.id)}>❌</button>
-                      </>
-                    )}
-                    <button className="action-btn" title={supplier.status === 'Active' ? 'Deactivate' : 'Activate'} onClick={() => supplier.status === 'Active' ? handleDeactivateSupplier(supplier.id) : handleActivateSupplier(supplier.id)}>
-                      {supplier.status === 'Active' ? '⏸️' : '▶️'}
-                    </button>
-                    <button className="action-btn" title="Assign Brokers" onClick={() => handleManageBrokers(supplier)}>🤝</button>
-                    <button className="action-btn" title="Performance History" onClick={() => handleViewPerformance(supplier)}>📊</button>
-                    <button className="action-btn" title="Fulfillment Record" onClick={() => handleViewFulfillment(supplier)}>🚚</button>
-                    <button className="action-btn" title="Reset Password" onClick={() => handleResetPassword(supplier)}>🔑</button>
-                    <button className="action-btn" title="Documents" onClick={() => handleManageDocuments(supplier)}>📄</button>
-                    <button className="action-btn" title="Delete" onClick={() => handleDeleteSupplier(supplier.id)}>🗑️</button>
-                  </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div className="flex items-center py-4">
+          <Input
+            placeholder="Filter by company name..."
+            value={(table.getColumn("companyName")?.getFilterValue() ?? "")}
+            onChange={(event) =>
+              table.getColumn("companyName")?.setFilterValue(event.target.value)
+            }
+            className="max-w-sm"
+          />
+          <DataTableViewOptions table={table} />
+        </div>
+        <div className="overflow-hidden rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    return (
+                      <TableHead key={header.id}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    )
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-24 text-center"
+                  >
+                    {suppliers.length === 0 ? 'No suppliers yet. Click "Create New Supplier" to add your first supplier.' : 'No suppliers found matching your criteria'}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="py-4">
+          <DataTablePagination table={table} />
+        </div>
 
         {/* Mobile Card View */}
         {filteredSuppliers.length === 0 ? (

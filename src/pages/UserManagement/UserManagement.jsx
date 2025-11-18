@@ -25,8 +25,38 @@ import {
   Mail,
   MoreVertical,
   Plus,
-  X
+  X,
+  MoreHorizontal
 } from 'lucide-react'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
@@ -368,6 +398,11 @@ function UserManagement() {
       return matchesSearch && matchesProject && matchesStatus && matchesPayment
     })
   }, [users, searchQuery, filterProject, filterStatus, filterPayment])
+
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
 
   const handleViewDetails = (user) => {
     setSelectedUser(user)
@@ -1153,6 +1188,153 @@ This is a sample document for demonstration purposes.`
     }
   }
 
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="User Details" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="user-cell-um">
+            <div className="user-avatar-um">
+              {user.name.charAt(0)}
+            </div>
+            <div>
+              <div className="user-name-um">{user.name}</div>
+              <div className="user-meta">Joined: {user.joinDate}</div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "email",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Contact" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="contact-info">
+            <div>{user.email}</div>
+            <div className="user-meta">{user.phone}</div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "project",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Project / Property" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div>
+            <div className="project-name" style={{ marginBottom: user.properties && user.properties.length > 1 ? '8px' : '4px' }}>
+              {user.project}
+            </div>
+            <div className="user-meta" style={{ fontSize: '13px', lineHeight: '1.5' }}>
+              {user.property}
+            </div>
+            {user.properties && user.properties.length > 1 && (
+              <div className="user-meta" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', fontStyle: 'italic' }}>
+                {user.properties.length} properties
+              </div>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "broker",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Broker" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div>
+            {user.broker !== 'N/A' ? (
+              <div className="broker-name" style={{ fontSize: '13px', lineHeight: '1.5' }}>{user.broker}</div>
+            ) : (
+              <span className="no-broker">No Broker</span>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(user)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditUser(user)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleToggleStatus(user.id, user.status)}>
+                {user.status === 'Active' ? <PauseCircle className="mr-2 h-4 w-4" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                {user.status === 'Active' ? 'Deactivate' : 'Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                <Key className="mr-2 h-4 w-4" />
+                Reset Password
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageDocuments(user)}>
+                <FileText className="mr-2 h-4 w-4" />
+                Documents
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageNotifications(user)}>
+                <Bell className="mr-2 h-4 w-4" />
+                Notifications
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleDeleteUser(user.id)}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: filteredUsers,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
+
   return (
     <div className="user-management-page">
       <div className="page-header">
@@ -1268,160 +1450,72 @@ This is a sample document for demonstration purposes.`
             </button>
           </div>
         ) : (
-        <table className="users-table-um">
-          <thead>
-            <tr>
-              <th>User Details</th>
-              <th>Contact</th>
-              <th>Project / Property</th>
-              <th>Broker</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.length === 0 ? (
-              <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  {users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}
-                </td>
-              </tr>
-            ) : (
-              filteredUsers.map((user) => (
-              <tr key={user.id} className={openMenuId === user.id ? 'dropdown-open' : ''}>
-                <td>
-                  <div className="user-cell-um">
-                    <div className="user-avatar-um">
-                      {user.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="user-name-um">{user.name}</div>
-                      <div className="user-meta">Joined: {user.joinDate}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div className="contact-info">
-                    <div>{user.email}</div>
-                    <div className="user-meta">{user.phone}</div>
-                  </div>
-                </td>
-                <td>
-                  <div>
-                    <div className="project-name" style={{ marginBottom: user.properties && user.properties.length > 1 ? '8px' : '4px' }}>
-                      {user.project}
-                    </div>
-                    <div className="user-meta" style={{ fontSize: '13px', lineHeight: '1.5' }}>
-                      {user.property}
-                    </div>
-                    {user.properties && user.properties.length > 1 && (
-                      <div className="user-meta" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', fontStyle: 'italic' }}>
-                        {user.properties.length} properties
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  <div>
-                    {user.broker !== 'N/A' ? (
-                      <div className="broker-name" style={{ fontSize: '13px', lineHeight: '1.5' }}>{user.broker}</div>
-                    ) : (
-                      <span className="no-broker">No Broker</span>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  <div className={`action-menu-container ${openMenuId === user.id ? 'dropdown-open' : ''}`}>
-                    <button 
-                      className="action-menu-btn" 
-                      title="Actions"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setOpenMenuId(openMenuId === user.id ? null : user.id)
-                      }}
-                    >
-                      <MoreVertical size={18} />
-                    </button>
-                    {openMenuId === user.id && (
-                      <div className="action-menu-dropdown">
-                        <button 
-                          className="action-menu-item" 
-                          onClick={() => {
-                            handleViewDetails(user)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          <Eye size={16} />
-                          <span>View</span>
-                        </button>
-                        <button 
-                          className="action-menu-item" 
-                          onClick={() => {
-                            handleEditUser(user)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          <Pencil size={16} />
-                          <span>Edit</span>
-                        </button>
-                        <button 
-                          className="action-menu-item" 
-                          onClick={() => {
-                            handleToggleStatus(user.id, user.status)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          {user.status === 'Active' ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
-                          <span>{user.status === 'Active' ? 'Deactivate' : 'Activate'}</span>
-                        </button>
-                        <button 
-                          className="action-menu-item" 
-                          onClick={() => {
-                            handleResetPassword(user)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          <Key size={16} />
-                          <span>Reset Password</span>
-                        </button>
-                        <button 
-                          className="action-menu-item" 
-                          onClick={() => {
-                            handleManageDocuments(user)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          <FileText size={16} />
-                          <span>Documents</span>
-                        </button>
-                        <button 
-                          className="action-menu-item" 
-                          onClick={() => {
-                            handleManageNotifications(user)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          <Bell size={16} />
-                          <span>Notifications</span>
-                        </button>
-                        <button 
-                          className="action-menu-item action-menu-item-danger" 
-                          onClick={() => {
-                            handleDeleteUser(user.id)
-                            setOpenMenuId(null)
-                          }}
-                        >
-                          <Trash2 size={16} />
-                          <span>Delete</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+          <>
+            <div className="flex items-center py-4">
+              <Input
+                placeholder="Filter by name or email..."
+                value={(table.getColumn("name")?.getFilterValue() ?? "")}
+                onChange={(event) =>
+                  table.getColumn("name")?.setFilterValue(event.target.value)
+                }
+                className="max-w-sm"
+              />
+              <DataTableViewOptions table={table} />
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        return (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && "selected"}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        {users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="py-4">
+              <DataTablePagination table={table} />
+            </div>
+          </>
         )}
 
         {/* Mobile Card View */}
