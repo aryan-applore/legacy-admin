@@ -35,7 +35,7 @@ function Header({ onMenuClick, onLogout }) {
           <button className="menu-toggle" onClick={onMenuClick}>
             <Menu size={20} />
           </button>
-          <h1 className="page-title">Legacy Admin</h1>
+          <span className="page-title">Legacy Admin</span>
         </div>
         
         <div className="header-right">

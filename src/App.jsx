@@ -9,6 +9,7 @@ import SupplierManagement from './pages/SupplierManagement/SupplierManagement'
 import PropertyManagement from './pages/PropertyManagement/PropertyManagement'
 import Documents from './pages/Documents/Documents'
 import Support from './pages/Support/Support'
+import AppApiTest from './pages/AppApiTest/AppApiTest'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -91,6 +92,7 @@ function App() {
           <Route path="supplier-management" element={<SupplierManagement />} />
           <Route path="documents" element={<Documents />} />
           <Route path="support" element={<Support />} />
+          <Route path="app-api-test" element={<AppApiTest />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

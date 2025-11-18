@@ -6,7 +6,8 @@ import {
   Handshake, 
   Factory, 
   FileText, 
-  Headphones 
+  Headphones,
+  Code
 } from 'lucide-react'
 import './Sidebar.css'
 
@@ -46,6 +47,11 @@ function Sidebar({ isOpen, onClose }) {
       path: '/support',
       name: 'Support',
       icon: <Headphones size={20} />
+    },
+    {
+      path: '/app-api-test',
+      name: 'App API Test',
+      icon: <Code size={20} />
     }
   ]
 
