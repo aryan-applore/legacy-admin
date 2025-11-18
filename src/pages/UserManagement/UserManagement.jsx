@@ -15,17 +15,166 @@ import {
   Download,
   Image as ImageIcon,
   File,
+  ExternalLink,
   Phone,
   Building,
   Home,
   DollarSign,
   MapPin,
   Check,
-  Mail
+  Mail,
+  MoreVertical,
+  Plus,
+  X,
+  MoreHorizontal
 } from 'lucide-react'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
+
+// Property Assignment Form Component
+function PropertyAssignmentForm({ projects, properties, brokers, onAdd }) {
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [selectedPropertyId, setSelectedPropertyId] = useState('')
+  const [selectedBrokerId, setSelectedBrokerId] = useState('')
+
+  const getFilteredProperties = () => {
+    if (!selectedProjectId) return []
+    return properties.filter(property => {
+      const propProjectId = property.projectId || property.project?._id || property.project?.id
+      const projectIdStr = typeof propProjectId === 'object' && propProjectId?._id 
+        ? propProjectId._id.toString() 
+        : propProjectId?.toString()
+      return projectIdStr === selectedProjectId.toString()
+    })
+  }
+
+  const handleAdd = () => {
+    if (!selectedProjectId || !selectedPropertyId) {
+      alert('Please select both project and property')
+      return
+    }
+    onAdd({
+      projectId: selectedProjectId,
+      propertyId: selectedPropertyId,
+      brokerId: selectedBrokerId || undefined
+    })
+    // Reset form
+    setSelectedProjectId('')
+    setSelectedPropertyId('')
+    setSelectedBrokerId('')
+  }
+
+  return (
+    <div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Select Project *</label>
+          <select 
+            value={selectedProjectId}
+            onChange={(e) => {
+              setSelectedProjectId(e.target.value)
+              setSelectedPropertyId('')
+            }}
+          >
+            <option value="">Select Project</option>
+            {projects.map(project => (
+              <option key={project._id || project.id} value={project._id || project.id}>
+                {project.name} {project.location?.city ? ` - ${project.location.city}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Select Property *</label>
+          <select 
+            value={selectedPropertyId}
+            onChange={(e) => setSelectedPropertyId(e.target.value)}
+            disabled={!selectedProjectId}
+          >
+            <option value="">{selectedProjectId ? 'Select Property' : 'Select Project First'}</option>
+            {getFilteredProperties().map(property => (
+              <option key={property.id || property._id} value={property.id || property._id}>
+                {property.flatNo} {property.buildingName ? `- ${property.buildingName}` : ''}
+                {property.specifications?.area ? ` - ${property.specifications.area} sqft` : ''}
+                {property.pricing?.totalPrice ? ` - ₹${property.pricing.totalPrice.toLocaleString('en-IN')}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Assign Broker (Optional)</label>
+          <select 
+            value={selectedBrokerId}
+            onChange={(e) => setSelectedBrokerId(e.target.value)}
+          >
+            <option value="">No Broker</option>
+            {brokers.map(broker => (
+              <option key={broker._id || broker.id} value={broker._id || broker.id}>
+                {broker.name} {broker.company ? `- ${broker.company}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!selectedProjectId || !selectedPropertyId}
+            style={{
+              marginTop: '24px',
+              padding: '10px',
+              backgroundColor: selectedProjectId && selectedPropertyId ? '#2A669B' : '#ccc',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: selectedProjectId && selectedPropertyId ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '44px',
+              height: '44px'
+            }}
+            title="Add property assignment"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function UserManagement() {
   const [showUserModal, setShowUserModal] = useState(false)
@@ -33,9 +182,13 @@ function UserManagement() {
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showDocumentsModal, setShowDocumentsModal] = useState(false)
   const [showNotificationsModal, setShowNotificationsModal] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState(null)
   
   // Form Validation States
   const [formErrors, setFormErrors] = useState({})
+  
+  // Property Assignment State - Support multiple properties
+  const [propertyAssignments, setPropertyAssignments] = useState([]) // Array of {projectId, propertyId, brokerId}
   
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -49,17 +202,22 @@ function UserManagement() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   
-  // Projects and Brokers State
+  // Projects, Brokers, and Properties State
   const [projects, setProjects] = useState([])
   const [brokers, setBrokers] = useState([])
+  const [properties, setProperties] = useState([])
   
-  // Store uploaded documents with their file data
+  // Store uploaded documents with their file data (for backward compatibility)
   const [userDocuments, setUserDocuments] = useState(() => {
     const savedDocs = localStorage.getItem('legacy-admin-documents')
     return savedDocs ? JSON.parse(savedDocs) : {}
   })
+  
+  // Store documents fetched from API
+  const [apiDocuments, setApiDocuments] = useState({})
+  const [loadingDocuments, setLoadingDocuments] = useState(false)
 
-  // Fetch projects and brokers
+  // Fetch projects, brokers, and properties
   useEffect(() => {
     const fetchProjectsAndBrokers = async () => {
       try {
@@ -82,8 +240,22 @@ function UserManagement() {
         } else {
           console.error('Failed to load brokers:', brokersData.error)
         }
+
+        // Fetch properties
+        const propertiesResponse = await fetch(`${API_BASE_URL}/admin/properties`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('adminToken') || ''}`
+          }
+        })
+        const propertiesData = await propertiesResponse.json()
+        if (propertiesData.success && propertiesData.data) {
+          setProperties(propertiesData.data.properties || [])
+          console.log('Properties loaded:', propertiesData.data.properties?.length || 0)
+        } else {
+          console.error('Failed to load properties:', propertiesData.error)
+        }
       } catch (err) {
-        console.error('Error fetching projects/brokers:', err)
+        console.error('Error fetching projects/brokers/properties:', err)
         // Note: showNotification is defined later, so we'll just log for now
         // The error will be visible in console
       }
@@ -105,8 +277,37 @@ function UserManagement() {
         if (data.success && data.data) {
           // Map backend user data to frontend format
           const mappedUsers = data.data.map(user => {
-            // Get first property if available
-            const firstProperty = user.properties && user.properties.length > 0 ? user.properties[0] : null
+            // Get all properties if available
+            const userProperties = user.properties && user.properties.length > 0 ? user.properties : []
+            
+            // Format properties for display
+            const propertiesDisplay = userProperties.length > 0 
+              ? userProperties.map(prop => `${prop.flatNo || 'N/A'}${prop.buildingName ? ` - ${prop.buildingName}` : ''}`).join(', ')
+              : 'N/A'
+            
+            // Get unique projects
+            const projectsDisplay = userProperties.length > 0
+              ? [...new Set(userProperties.map(prop => prop.projectName || 'N/A').filter(p => p !== 'N/A'))].join(', ')
+              : 'N/A'
+            
+            // Get brokers (can be multiple, one per property)
+            // Handle both old format (brokerName, brokerCompany) and new format (broker object)
+            const brokersDisplay = userProperties.length > 0
+              ? userProperties
+                  .map(prop => {
+                    // New format: broker object
+                    if (prop.broker && prop.broker.name) {
+                      return `${prop.broker.name}${prop.broker.company ? ` (${prop.broker.company})` : ''}`
+                    }
+                    // Old format: brokerName and brokerCompany
+                    if (prop.brokerName) {
+                      return `${prop.brokerName}${prop.brokerCompany ? ` (${prop.brokerCompany})` : ''}`
+                    }
+                    return null
+                  })
+                  .filter(b => b !== null)
+                  .join(', ') || 'N/A'
+              : 'N/A'
             
             return {
               id: user._id || user.id,
@@ -114,12 +315,12 @@ function UserManagement() {
               email: user.email || 'N/A',
               phone: user.phone || 'N/A',
               status: 'Active', // Default status, can be updated later
-              project: firstProperty?.projectName || 'N/A',
-              property: firstProperty ? `${firstProperty.flatNo}${firstProperty.buildingName ? ` - ${firstProperty.buildingName}` : ''}` : 'N/A',
-              propertyId: firstProperty?.id || null,
-              projectId: firstProperty?.projectId || null,
-              brokerId: firstProperty?.brokerId || null,
-              broker: firstProperty?.brokerName ? `${firstProperty.brokerName}${firstProperty.brokerCompany ? ` (${firstProperty.brokerCompany})` : ''}` : 'N/A',
+              project: projectsDisplay,
+              property: propertiesDisplay,
+              propertyId: userProperties.length > 0 ? userProperties[0]?.id || null : null,
+              projectId: userProperties.length > 0 ? userProperties[0]?.projectId || null : null,
+              brokerId: userProperties.length > 0 ? (userProperties[0]?.broker?.id || userProperties[0]?.brokerId || null) : null,
+              broker: brokersDisplay,
               address: user.address ? 
                 `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
                 : '',
@@ -128,7 +329,7 @@ function UserManagement() {
               documents: 0, // Should be fetched from documents
               tickets: 0, // Should be fetched from tickets
               role: user.role || 'user',
-              properties: user.properties || [] // Store all properties
+              properties: userProperties // Store all properties
             }
           })
           setUsers(mappedUsers)
@@ -153,6 +354,23 @@ function UserManagement() {
     localStorage.setItem('legacy-admin-documents', JSON.stringify(userDocuments))
   }, [userDocuments])
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (openMenuId && !event.target.closest('.action-menu-container')) {
+        setOpenMenuId(null)
+      }
+    }
+
+    if (openMenuId) {
+      document.addEventListener('click', handleClickOutside)
+      return () => {
+        document.removeEventListener('click', handleClickOutside)
+      }
+    }
+  }, [openMenuId])
+
+
   // Filtered and Searched Users
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
@@ -162,8 +380,8 @@ function UserManagement() {
         user.name.toLowerCase().includes(searchLower) ||
         user.email.toLowerCase().includes(searchLower) ||
         user.phone.includes(searchQuery) ||
-        user.project.toLowerCase().includes(searchLower) ||
-        user.property.toLowerCase().includes(searchLower)
+        (user.project && user.project.toLowerCase().includes(searchLower)) ||
+        (user.property && user.property.toLowerCase().includes(searchLower))
 
       // Project filter
       const matchesProject = 
@@ -181,6 +399,11 @@ function UserManagement() {
     })
   }, [users, searchQuery, filterProject, filterStatus, filterPayment])
 
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
+
   const handleViewDetails = (user) => {
     setSelectedUser(user)
     setShowDetailsModal(true)
@@ -188,12 +411,81 @@ function UserManagement() {
 
   const handleEditUser = (user) => {
     setSelectedUser(user)
+    
+    // Load existing property assignments from user's properties
+    if (user.properties && user.properties.length > 0) {
+      const assignments = user.properties.map(prop => ({
+        projectId: prop.projectId || prop.project?._id || prop.project?.id,
+        propertyId: prop.id || prop._id,
+        // Handle both old format (brokerId) and new format (broker object with id)
+        brokerId: prop.broker?.id || prop.broker?._id || prop.brokerId || null
+      })).filter(a => a.projectId && a.propertyId) // Filter out invalid assignments
+      setPropertyAssignments(assignments)
+    } else {
+      setPropertyAssignments([])
+    }
+    
     setShowUserModal(true)
   }
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
     setTimeout(() => setNotification(null), 3000)
+  }
+
+  const validateForm = (formData, isNewUser) => {
+    const errors = {}
+    
+    // Validate name
+    const name = formData.get('name')?.trim()
+    if (!name) {
+      errors.name = 'Full name is required'
+    } else if (name.length < 3) {
+      errors.name = 'Name must be at least 3 characters'
+    } else if (!/^[a-zA-Z\s]+$/.test(name)) {
+      errors.name = 'Name can only contain letters and spaces'
+    }
+    
+    // Validate email
+    const email = formData.get('email')?.trim()
+    if (!email) {
+      errors.email = 'Email is required'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = 'Please enter a valid email address'
+    }
+    
+    // Validate phone
+    const phone = formData.get('phone')?.trim()
+    if (!phone) {
+      errors.phone = 'Phone number is required'
+    } else if (!/^[6-9][0-9]{9}$/.test(phone)) {
+      errors.phone = 'Please enter a valid 10-digit Indian mobile number starting with 6-9'
+    }
+    
+    // Note: Property assignments are validated separately via propertyAssignments state
+    // They are optional - user can be created without properties
+    
+    // Validate password for new users
+    if (isNewUser) {
+      const password = formData.get('password')
+      const confirmPassword = formData.get('confirmPassword')
+      
+      if (!password) {
+        errors.password = 'Password is required'
+      } else if (password.length < 8) {
+        errors.password = 'Password must be at least 8 characters'
+      } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+        errors.password = 'Password must contain uppercase, lowercase, and a number'
+      }
+      
+      if (!confirmPassword) {
+        errors.confirmPassword = 'Please confirm your password'
+      } else if (password !== confirmPassword) {
+        errors.confirmPassword = 'Passwords do not match'
+      }
+    }
+    
+    return errors
   }
 
   const handleSaveUser = async (e) => {
@@ -259,52 +551,51 @@ function UserManagement() {
       if (data.success) {
         userId = userId || data.data._id || data.data.id
         
-        // Assign user to property if project and property data provided
-        const projectId = formData.get('projectId')
-        const flatNo = formData.get('flatNo')
-        const brokerId = formData.get('brokerId') || null
-        
-        if (projectId && flatNo) {
-          const propertyData = {
-            flatNo: flatNo,
-            buildingName: formData.get('buildingName') || undefined,
-            location: formData.get('address') ? {
-              address: formData.get('address')
-            } : undefined,
-            specifications: {
-              area: formData.get('area') ? parseFloat(formData.get('area')) : undefined,
-              bedrooms: formData.get('bedrooms') ? parseInt(formData.get('bedrooms')) : undefined,
-              bathrooms: formData.get('bathrooms') ? parseInt(formData.get('bathrooms')) : undefined
-            },
-            pricing: {
-              totalPrice: formData.get('totalPrice') ? parseFloat(formData.get('totalPrice')) : undefined,
-              bookingAmount: formData.get('bookingAmount') ? parseFloat(formData.get('bookingAmount')) : undefined
-            }
-          }
-
+        // Assign multiple properties to user if any are selected
+        if (propertyAssignments && propertyAssignments.length > 0) {
           try {
-            const assignResponse = await fetch(`${API_BASE_URL}/users/${userId}/assign-property`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('adminToken') || ''}`
-              },
-              body: JSON.stringify({
-                projectId,
-                propertyData,
-                brokerId: brokerId || undefined
+            // Get the admin token
+            const adminToken = localStorage.getItem('adminToken') || ''
+            
+            if (!adminToken) {
+              showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: Authentication required. Please log in as admin.`, 'error')
+            } else {
+              // Use the new assign-properties endpoint for multiple assignments
+              const assignResponse = await fetch(`${API_BASE_URL}/users/${userId}/assign-properties`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${adminToken}`
+                },
+                body: JSON.stringify({
+                  propertyAssignments: propertyAssignments
+                })
               })
-            })
 
-            const assignData = await assignResponse.json()
-            if (!assignData.success) {
-              console.error('Failed to assign property:', assignData.error)
-              showNotification('User created but property assignment failed: ' + assignData.error, 'error')
+              const assignData = await assignResponse.json()
+              if (!assignData.success) {
+                console.error('Failed to assign properties:', assignData.error)
+                if (assignResponse.status === 401 || assignResponse.status === 403) {
+                  showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: Authentication error. Please log in as admin.`, 'error')
+                } else {
+                  showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: ${assignData.error}`, 'error')
+                }
+              } else {
+                const successCount = assignData.data?.totalAssigned || 0
+                const errorCount = assignData.data?.errors?.length || 0
+                if (errorCount > 0) {
+                  showNotification(`${selectedUser ? 'User updated' : 'User created'}. ${successCount} property/properties assigned successfully, ${errorCount} failed.`, 'warning')
+                } else {
+                  showNotification(`${selectedUser ? 'User updated' : 'User created'} and ${successCount} property/properties assigned successfully`, 'success')
+                }
+              }
             }
           } catch (assignErr) {
-            console.error('Error assigning property:', assignErr)
-            showNotification('User created but property assignment failed', 'error')
+            console.error('Error assigning properties:', assignErr)
+            showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: ${assignErr.message}`, 'error')
           }
+        } else {
+          showNotification(`${selectedUser ? 'User updated' : 'User created'} successfully`, 'success')
         }
         
         // Refresh users list
@@ -313,8 +604,37 @@ function UserManagement() {
         
         if (fetchData.success && fetchData.data) {
           const mappedUsers = fetchData.data.map(user => {
-            // Get first property if available
-            const firstProperty = user.properties && user.properties.length > 0 ? user.properties[0] : null
+            // Get all properties if available
+            const userProperties = user.properties && user.properties.length > 0 ? user.properties : []
+            
+            // Format properties for display
+            const propertiesDisplay = userProperties.length > 0 
+              ? userProperties.map(prop => `${prop.flatNo || 'N/A'}${prop.buildingName ? ` - ${prop.buildingName}` : ''}`).join(', ')
+              : 'N/A'
+            
+            // Get unique projects
+            const projectsDisplay = userProperties.length > 0
+              ? [...new Set(userProperties.map(prop => prop.projectName || 'N/A').filter(p => p !== 'N/A'))].join(', ')
+              : 'N/A'
+            
+            // Get brokers (can be multiple, one per property)
+            // Handle both old format (brokerName, brokerCompany) and new format (broker object)
+            const brokersDisplay = userProperties.length > 0
+              ? userProperties
+                  .map(prop => {
+                    // New format: broker object
+                    if (prop.broker && prop.broker.name) {
+                      return `${prop.broker.name}${prop.broker.company ? ` (${prop.broker.company})` : ''}`
+                    }
+                    // Old format: brokerName and brokerCompany
+                    if (prop.brokerName) {
+                      return `${prop.brokerName}${prop.brokerCompany ? ` (${prop.brokerCompany})` : ''}`
+                    }
+                    return null
+                  })
+                  .filter(b => b !== null)
+                  .join(', ') || 'N/A'
+              : 'N/A'
             
             return {
               id: user._id || user.id,
@@ -322,12 +642,12 @@ function UserManagement() {
               email: user.email || 'N/A',
               phone: user.phone || 'N/A',
               status: 'Active',
-              project: firstProperty?.projectName || 'N/A',
-              property: firstProperty ? `${firstProperty.flatNo}${firstProperty.buildingName ? ` - ${firstProperty.buildingName}` : ''}` : 'N/A',
-              propertyId: firstProperty?.id || null,
-              projectId: firstProperty?.projectId || null,
-              brokerId: firstProperty?.brokerId || null,
-              broker: firstProperty?.brokerName ? `${firstProperty.brokerName}${firstProperty.brokerCompany ? ` (${firstProperty.brokerCompany})` : ''}` : 'N/A',
+              project: projectsDisplay,
+              property: propertiesDisplay,
+              propertyId: userProperties.length > 0 ? userProperties[0]?.id || null : null,
+              projectId: userProperties.length > 0 ? userProperties[0]?.projectId || null : null,
+              brokerId: userProperties.length > 0 ? (userProperties[0]?.broker?.id || userProperties[0]?.brokerId || null) : null,
+              broker: brokersDisplay,
               address: user.address ? 
                 `${user.address.line1 || ''} ${user.address.line2 || ''} ${user.address.city || ''} ${user.address.state || ''} ${user.address.pincode || ''}`.trim() 
                 : '',
@@ -336,15 +656,17 @@ function UserManagement() {
               documents: 0,
               tickets: 0,
               role: user.role || 'user',
-              properties: user.properties || []
+              properties: userProperties
             }
           })
           setUsers(mappedUsers)
         }
         
-        showNotification(selectedUser ? 'User updated successfully!' : 'User created successfully!', 'success')
+        // Close modal and reset form
         setShowUserModal(false)
         setSelectedUser(null)
+        setPropertyAssignments([])
+        setFormErrors({})
       } else {
         showNotification(data.error || 'Failed to save user', 'error')
       }
@@ -428,12 +750,70 @@ function UserManagement() {
     showNotification('Filters cleared!', 'info')
   }
 
-  const handleManageDocuments = (user) => {
+  const handleManageDocuments = async (user) => {
     setSelectedUser(user)
     setShowDocumentsModal(true)
+    
+    // Fetch documents from API for this user
+    try {
+      setLoadingDocuments(true)
+      // Note: The API endpoint should be /api/documents?userId=... but we need to check the actual endpoint
+      // For now, we'll fetch all documents and filter by userId on the frontend
+      // Or we can use the user's documents endpoint if available
+      const token = localStorage.getItem('adminToken')
+      if (!token) {
+        showNotification('Please log in to view documents', 'error')
+        return
+      }
+      // For admin users, fetch documents for the selected user
+      const url = `${API_BASE_URL}/documents${user.id ? `?userId=${user.id}` : ''}`
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data && data.data.documents) {
+          // The API filters documents by userId query parameter (for admin) or authenticated user
+          // Map documents to ensure correct format
+          const userDocs = data.data.documents.map(doc => ({
+            ...doc,
+            // Ensure we have the correct ID format
+            id: doc.id || doc._id,
+            // Map uploadedAt to uploadedAt for consistency
+            uploadedAt: doc.uploadedAt || doc.createdAt
+          }))
+          setApiDocuments(prev => ({
+            ...prev,
+            [user.id]: userDocs
+          }))
+        } else {
+          // No documents found for this user
+          setApiDocuments(prev => ({
+            ...prev,
+            [user.id]: []
+          }))
+        }
+      } else {
+        // If unauthorized, might need to handle differently
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to fetch documents:', errorData)
+        // If 401, show message about authentication
+        if (response.status === 401) {
+          showNotification('Please log in to view documents', 'error')
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching documents:', error)
+    } finally {
+      setLoadingDocuments(false)
+    }
   }
 
-  const handleUploadDocument = (e) => {
+  const handleUploadDocument = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
     const documentType = formData.get('documentType')
@@ -441,36 +821,65 @@ function UserManagement() {
     const file = formData.get('document')
     const description = formData.get('description')
     
-    if (file && file.size > 0) {
-      // Store the document with file data
-      const documentData = {
-        id: Date.now(),
-        name: documentTitle || documentType,
-        type: documentType,
-        file: file,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        description: description,
-        uploadDate: new Date().toLocaleString(),
-        userId: selectedUser.id
+    if (!file || file.size === 0) {
+      showNotification('Please select a file to upload', 'error')
+      return
+    }
+    
+    if (!documentType || !documentTitle) {
+      showNotification('Document type and title are required', 'error')
+      return
+    }
+    
+    try {
+      // Create FormData for API upload
+      const uploadFormData = new FormData()
+      uploadFormData.append('document', file)
+      uploadFormData.append('documentType', documentType)
+      uploadFormData.append('documentTitle', documentTitle)
+      // For admin users, include the selected user's ID
+      if (selectedUser && selectedUser.id) {
+        uploadFormData.append('userId', selectedUser.id)
+      }
+      if (description) {
+        uploadFormData.append('description', description)
       }
       
-      // Update userDocuments state
-      setUserDocuments(prev => ({
-        ...prev,
-        [selectedUser.id]: [...(prev[selectedUser.id] || []), documentData]
-      }))
+      const token = localStorage.getItem('adminToken')
+      if (!token) {
+        showNotification('Please log in to upload documents', 'error')
+        return
+      }
+      const response = await fetch(`${API_BASE_URL}/documents`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: uploadFormData
+      })
       
-      // Update user's document count
-      setUsers(users.map(u => 
-        u.id === selectedUser.id 
-          ? { ...u, documents: u.documents + 1 }
-          : u
-      ))
+      const data = await response.json()
       
-      showNotification(`${documentType} uploaded successfully!`, 'success')
-      e.target.reset()
+      if (response.ok && data.success) {
+        showNotification(`${documentType} uploaded successfully!`, 'success')
+        
+        // Refresh documents list
+        await handleManageDocuments(selectedUser)
+        
+        // Update user's document count
+        setUsers(users.map(u => 
+          u.id === selectedUser.id 
+            ? { ...u, documents: (u.documents || 0) + 1 }
+            : u
+        ))
+        
+        e.target.reset()
+      } else {
+        showNotification(data.error || 'Failed to upload document', 'error')
+      }
+    } catch (error) {
+      console.error('Upload error:', error)
+      showNotification('Failed to upload document. Please try again.', 'error')
     }
   }
 
@@ -491,11 +900,180 @@ function UserManagement() {
     e.target.reset()
   }
 
-  const handleDownloadDocument = (documentData) => {
+  const handleViewInBrowser = async (documentData) => {
+    try {
+      showNotification(`Opening "${documentData.name}" in browser...`, 'info')
+      
+      // If document has an ID, it's from the API - fetch presigned URL
+      if (documentData.id) {
+        const token = localStorage.getItem('adminToken')
+        if (!token) {
+          throw new Error('Authentication token not found. Please log in again.')
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/documents/${documentData.id}/download`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.data && data.data.downloadUrl) {
+            // Open the presigned URL in a new tab
+            window.open(data.data.downloadUrl, '_blank')
+            showNotification(`"${documentData.name}" opened in browser!`, 'success')
+            return
+          } else {
+            throw new Error(data.error || 'Failed to get view URL')
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          throw new Error(errorData.error || `HTTP ${response.status}: Failed to open document`)
+        }
+      } else if (documentData.file) {
+        // For localStorage documents, create object URL and open it
+        const url = window.URL.createObjectURL(documentData.file)
+        window.open(url, '_blank')
+        // Clean up after a delay
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+        showNotification(`"${documentData.name}" opened in browser!`, 'success')
+      } else {
+        throw new Error('Document file not available')
+      }
+    } catch (error) {
+      console.error('View error:', error)
+      showNotification('Failed to open document in browser. Please try again.', 'error')
+    }
+  }
+
+  const handleDeleteDocument = async (documentData) => {
+    if (!window.confirm(`Are you sure you want to delete "${documentData.name}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      showNotification(`Deleting "${documentData.name}"...`, 'info')
+      
+      // Check if this is a localStorage document (has file property or numeric/timestamp ID)
+      const isLocalStorageDoc = documentData.file || 
+                                 (documentData.id && typeof documentData.id === 'number') ||
+                                 (documentData.id && typeof documentData.id === 'string' && /^\d+$/.test(documentData.id) && documentData.id.length > 10)
+      
+      // Check if this is a MongoDB ObjectId (24 hex characters)
+      const isMongoId = documentData.id && 
+                       typeof documentData.id === 'string' && 
+                       /^[0-9a-fA-F]{24}$/.test(documentData.id)
+      
+      if (isLocalStorageDoc) {
+        // For localStorage documents, remove from state
+        setUserDocuments(prev => {
+          const userDocs = prev[selectedUser.id] || []
+          return {
+            ...prev,
+            [selectedUser.id]: userDocs.filter(doc => doc.id !== documentData.id)
+          }
+        })
+        
+        // Update user's document count
+        setUsers(users.map(u => 
+          u.id === selectedUser.id 
+            ? { ...u, documents: Math.max(0, (u.documents || 0) - 1) }
+            : u
+        ))
+        
+        showNotification(`"${documentData.name}" deleted successfully!`, 'success')
+      } else if (isMongoId) {
+        // For API documents with MongoDB ObjectId, delete via API
+        const token = localStorage.getItem('adminToken')
+        if (!token) {
+          throw new Error('Authentication token not found. Please log in again.')
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/documents/${documentData.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            showNotification(`"${documentData.name}" deleted successfully!`, 'success')
+            
+            // Refresh documents list
+            await handleManageDocuments(selectedUser)
+            
+            // Update user's document count
+            setUsers(users.map(u => 
+              u.id === selectedUser.id 
+                ? { ...u, documents: Math.max(0, (u.documents || 0) - 1) }
+                : u
+            ))
+            return
+          } else {
+            throw new Error(data.error || 'Failed to delete document')
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          throw new Error(errorData.error || `HTTP ${response.status}: Failed to delete document`)
+        }
+      } else {
+        // Sample/demo documents - just show message
+        showNotification('This is a sample document and cannot be deleted.', 'info')
+      }
+    } catch (error) {
+      console.error('Delete error:', error)
+      showNotification(error.message || 'Failed to delete document. Please try again.', 'error')
+    }
+  }
+
+  const handleDownloadDocument = async (documentData) => {
     try {
       showNotification(`Downloading "${documentData.name}"...`, 'info')
       
-      // If the document has actual file data (uploaded file)
+      // If document has an ID, it's from the API - fetch presigned URL
+      if (documentData.id) {
+        const token = localStorage.getItem('adminToken')
+        if (!token) {
+          throw new Error('Authentication token not found. Please log in again.')
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/documents/${documentData.id}/download`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.data && data.data.downloadUrl) {
+            // Use the presigned URL to download
+            const link = document.createElement('a')
+            link.href = data.data.downloadUrl
+            link.download = data.data.fileName || documentData.name
+            link.target = '_blank'
+            
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            
+            showNotification(`"${documentData.name}" downloaded successfully!`, 'success')
+            return
+          } else {
+            throw new Error(data.error || 'Failed to get download URL')
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+          throw new Error(errorData.error || `HTTP ${response.status}: Failed to download document`)
+        }
+      }
+      
+      // If the document has actual file data (localStorage fallback)
       if (documentData.file) {
         // Create a download link with the actual file
         const url = window.URL.createObjectURL(documentData.file)
@@ -610,6 +1188,153 @@ This is a sample document for demonstration purposes.`
     }
   }
 
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="User Details" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="user-cell-um">
+            <div className="user-avatar-um">
+              {user.name.charAt(0)}
+            </div>
+            <div>
+              <div className="user-name-um">{user.name}</div>
+              <div className="user-meta">Joined: {user.joinDate}</div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "email",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Contact" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="contact-info">
+            <div>{user.email}</div>
+            <div className="user-meta">{user.phone}</div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "project",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Project / Property" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div>
+            <div className="project-name" style={{ marginBottom: user.properties && user.properties.length > 1 ? '8px' : '4px' }}>
+              {user.project}
+            </div>
+            <div className="user-meta" style={{ fontSize: '13px', lineHeight: '1.5' }}>
+              {user.property}
+            </div>
+            {user.properties && user.properties.length > 1 && (
+              <div className="user-meta" style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '4px', fontStyle: 'italic' }}>
+                {user.properties.length} properties
+              </div>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "broker",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Broker" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div>
+            {user.broker !== 'N/A' ? (
+              <div className="broker-name" style={{ fontSize: '13px', lineHeight: '1.5' }}>{user.broker}</div>
+            ) : (
+              <span className="no-broker">No Broker</span>
+            )}
+          </div>
+        )
+      },
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(user)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditUser(user)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleToggleStatus(user.id, user.status)}>
+                {user.status === 'Active' ? <PauseCircle className="mr-2 h-4 w-4" /> : <PlayCircle className="mr-2 h-4 w-4" />}
+                {user.status === 'Active' ? 'Deactivate' : 'Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                <Key className="mr-2 h-4 w-4" />
+                Reset Password
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageDocuments(user)}>
+                <FileText className="mr-2 h-4 w-4" />
+                Documents
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageNotifications(user)}>
+                <Bell className="mr-2 h-4 w-4" />
+                Notifications
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleDeleteUser(user.id)}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: filteredUsers,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
+
   return (
     <div className="user-management-page">
       <div className="page-header">
@@ -617,7 +1342,11 @@ This is a sample document for demonstration purposes.`
           <h1 className="page-title-main">User Management (Buyers)</h1>
           <p className="page-subtitle">Manage all buyer accounts and their details</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setSelectedUser(null); setShowUserModal(true); }}>
+        <button className="btn btn-primary" onClick={() => { 
+          setSelectedUser(null)
+          setPropertyAssignments([])
+          setShowUserModal(true)
+        }}>
           + Create New User
         </button>
       </div>
@@ -721,140 +1450,72 @@ This is a sample document for demonstration purposes.`
             </button>
           </div>
         ) : (
-        <table className="users-table-um">
-          <thead>
-            <tr>
-              <th>User Details</th>
-              <th>Contact</th>
-              <th>Project / Property</th>
-              <th>Broker</th>
-              <th>Status</th>
-              <th>Payment</th>
-              <th>Documents</th>
-              <th>Tickets</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.length === 0 ? (
-              <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  {users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}
-                </td>
-              </tr>
-            ) : (
-              filteredUsers.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <div className="user-cell-um">
-                    <div className="user-avatar-um">
-                      {user.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="user-name-um">{user.name}</div>
-                      <div className="user-meta">Joined: {user.joinDate}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div className="contact-info">
-                    <div>{user.email}</div>
-                    <div className="user-meta">{user.phone}</div>
-                  </div>
-                </td>
-                <td>
-                  <div>
-                    <div className="project-name">{user.project}</div>
-                    <div className="user-meta">{user.property}</div>
-                  </div>
-                </td>
-                <td>
-                  <div>
-                    {user.broker !== 'N/A' ? (
-                      <div className="broker-name">{user.broker}</div>
-                    ) : (
-                      <span className="no-broker">No Broker</span>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  <span className={`status-badge ${user.status === 'Active' ? 'status-success' : 'status-error'}`}>
-                    {user.status}
-                  </span>
-                </td>
-                <td>
-                  <span className={`payment-badge ${
-                    user.paymentStatus === 'Up to Date' ? 'payment-success' : 
-                    user.paymentStatus === 'Pending' ? 'payment-warning' : 
-                    'payment-error'
-                  }`}>
-                    {user.paymentStatus}
-                  </span>
-                </td>
-                <td>
-                  <span className="docs-count">{user.documents} docs</span>
-                </td>
-                <td>
-                  <span className="tickets-count">{user.tickets}</span>
-                </td>
-                <td>
-                  <div className="action-buttons">
-                    <button 
-                      className="action-btn-um" 
-                      title="View Details"
-                      onClick={() => handleViewDetails(user)}
-                    >
-                      View
-                    </button>
-                    <button 
-                      className="action-btn-um" 
-                      title="Edit User"
-                      onClick={() => handleEditUser(user)}
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      className="action-btn-um" 
-                      title={user.status === 'Active' ? 'Deactivate Account' : 'Activate Account'}
-                      onClick={() => handleToggleStatus(user.id, user.status)}
-                    >
-                      {user.status === 'Active' ? 'Deactivate' : 'Activate'}
-                    </button>
-                    <button 
-                      className="action-btn-um" 
-                      title="Reset Password"
-                      onClick={() => handleResetPassword(user)}
-                    >
-                      Reset
-                    </button>
-                    <button 
-                      className="action-btn-um" 
-                      title="Manage Documents"
-                      onClick={() => handleManageDocuments(user)}
-                    >
-                      Docs
-                    </button>
-                    <button 
-                      className="action-btn-um" 
-                      title="Manage Notifications"
-                      onClick={() => handleManageNotifications(user)}
-                    >
-                      Notify
-                    </button>
-                    <button 
-                      className="action-btn-um" 
-                      title="Delete User"
-                      onClick={() => handleDeleteUser(user.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+          <>
+            <div className="flex items-center py-4">
+              <Input
+                placeholder="Filter by name or email..."
+                value={(table.getColumn("name")?.getFilterValue() ?? "")}
+                onChange={(event) =>
+                  table.getColumn("name")?.setFilterValue(event.target.value)
+                }
+                className="max-w-sm"
+              />
+              <DataTableViewOptions table={table} />
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        return (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && "selected"}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        {users.length === 0 ? 'No users yet. Click "Create New User" to add your first user.' : 'No users found matching your criteria'}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="py-4">
+              <DataTablePagination table={table} />
+            </div>
+          </>
         )}
 
         {/* Mobile Card View */}
@@ -1108,11 +1769,21 @@ This is a sample document for demonstration purposes.`
 
       {/* Create/Edit User Modal */}
       {showUserModal && (
-        <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
+        <div className="modal-overlay" onClick={() => {
+          setShowUserModal(false)
+          setSelectedProjectId(null)
+          setSelectedPropertyId(null)
+          setFormErrors({})
+        }}>
           <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{selectedUser ? 'Edit User' : 'Create New User'}</h2>
-              <button className="close-btn" onClick={() => { setShowUserModal(false); setFormErrors({}); }}>×</button>
+              <button className="close-btn" onClick={() => { 
+                setShowUserModal(false)
+                setFormErrors({})
+                setSelectedProjectId(null)
+                setSelectedPropertyId(null)
+              }}>×</button>
             </div>
             <div className="modal-body">
               <form className="user-form" onSubmit={handleSaveUser}>
@@ -1176,148 +1847,99 @@ This is a sample document for demonstration purposes.`
                   </div>
                 </div>
 
-                {/* Property Assignment Section */}
+                {/* Property Assignment Section - Multiple Properties */}
                 <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '2px solid #e0e0e0' }}>
                   <h3 style={{ marginBottom: '16px', color: '#2A669B', fontSize: '18px', fontWeight: '600' }}>
                     Property Assignment
                   </h3>
                   <p style={{ marginBottom: '20px', color: '#666', fontSize: '14px' }}>
-                    Assign this user to a property/project. This will allow them to view project details, documents, and payment schedules.
+                    Assign multiple properties to this user. Properties can be from different projects. Each property can have its own broker.
                   </p>
                   
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Assign Project *</label>
-                      <select 
-                        name="projectId"
-                        defaultValue={selectedUser?.projectId || ''}
-                        required
-                      >
-                        <option value="">Select Project</option>
-                        {projects.length > 0 ? (
-                          projects.map(project => (
-                            <option key={project._id || project.id} value={project._id || project.id}>
-                              {project.name}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No projects available. Please create a project first.</option>
-                        )}
-                      </select>
-                      {projects.length === 0 && (
-                        <small style={{ color: '#e74c3c', display: 'block', marginTop: '4px' }}>
-                          No projects found. Projects need to be created first.
-                        </small>
-                      )}
+                  {/* List of assigned properties */}
+                  {propertyAssignments.length > 0 && (
+                    <div style={{ marginBottom: '20px' }}>
+                      <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                        Assigned Properties ({propertyAssignments.length})
+                      </h4>
+                      {propertyAssignments.map((assignment, index) => {
+                        const project = projects.find(p => (p._id || p.id) === assignment.projectId)
+                        const property = properties.find(p => (p.id || p._id) === assignment.propertyId)
+                        const broker = brokers.find(b => (b._id || b.id) === assignment.brokerId)
+                        return (
+                          <div key={index} style={{ 
+                            padding: '12px', 
+                            marginBottom: '8px', 
+                            backgroundColor: '#f8f9fa', 
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                                {property?.flatNo || 'N/A'} - {project?.name || 'N/A'}
+                              </div>
+                              {broker && (
+                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                  Broker: {broker.name} {broker.company ? `(${broker.company})` : ''}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPropertyAssignments(propertyAssignments.filter((_, i) => i !== index))
+                              }}
+                              style={{
+                                padding: '6px',
+                                backgroundColor: 'transparent',
+                                color: '#e74c3c',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              title="Remove property"
+                            >
+                              <X size={18} />
+                            </button>
+                          </div>
+                        )
+                      })}
                     </div>
-                    <div className="form-group">
-                      <label>Flat/Unit Number *</label>
-                      <input 
-                        type="text"
-                        name="flatNo" 
-                        placeholder="e.g., A-1203" 
-                        defaultValue={selectedUser?.flatNo}
-                        required 
-                      />
-                    </div>
+                  )}
+                  
+                  {/* Add new property assignment */}
+                  <div style={{ 
+                    padding: '16px', 
+                    backgroundColor: '#f8f9fa', 
+                    borderRadius: '6px',
+                    border: '1px solid #e0e0e0'
+                  }}>
+                    <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                      Add Property Assignment
+                    </h4>
+                    <PropertyAssignmentForm
+                      projects={projects}
+                      properties={properties}
+                      brokers={brokers}
+                      onAdd={(assignment) => {
+                        // Check if property is already assigned
+                        const exists = propertyAssignments.some(
+                          a => a.propertyId === assignment.propertyId
+                        )
+                        if (exists) {
+                          showNotification('This property is already assigned', 'error')
+                          return
+                        }
+                        setPropertyAssignments([...propertyAssignments, assignment])
+                      }}
+                    />
                   </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Building Name</label>
-                      <input 
-                        type="text"
-                        name="buildingName" 
-                        placeholder="e.g., Tower A" 
-                        defaultValue={selectedUser?.buildingName}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Assign Broker (Optional)</label>
-                      <select 
-                        name="brokerId"
-                        defaultValue={selectedUser?.brokerId || ''}
-                      >
-                        <option value="">No Broker</option>
-                        {brokers.length > 0 ? (
-                          brokers.map(broker => (
-                            <option key={broker._id || broker.id} value={broker._id || broker.id}>
-                              {broker.name} {broker.company ? `- ${broker.company}` : ''}
-                            </option>
-                          ))
-                        ) : (
-                          <option value="" disabled>No brokers available</option>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Area (sqft)</label>
-                      <input 
-                        type="number"
-                        name="area" 
-                        placeholder="e.g., 1200" 
-                        defaultValue={selectedUser?.area}
-                        step="0.01"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Total Price (INR)</label>
-                      <input 
-                        type="number"
-                        name="totalPrice" 
-                        placeholder="e.g., 5000000" 
-                        defaultValue={selectedUser?.totalPrice}
-                        step="0.01"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Bedrooms</label>
-                      <input 
-                        type="number"
-                        name="bedrooms" 
-                        placeholder="e.g., 2" 
-                        defaultValue={selectedUser?.bedrooms}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Bathrooms</label>
-                      <input 
-                        type="number"
-                        name="bathrooms" 
-                        placeholder="e.g., 2" 
-                        defaultValue={selectedUser?.bathrooms}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Booking Amount (INR)</label>
-                      <input 
-                        type="number"
-                        name="bookingAmount" 
-                        placeholder="e.g., 500000" 
-                        defaultValue={selectedUser?.bookingAmount}
-                        step="0.01"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Address</label>
-                  <textarea 
-                    name="address"
-                    rows="3" 
-                    placeholder="Enter full address"
-                    defaultValue={selectedUser?.address || ''}
-                  ></textarea>
                 </div>
 
                 {!selectedUser && (
@@ -1353,7 +1975,12 @@ This is a sample document for demonstration purposes.`
                 )}
 
                 <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowUserModal(false); setSelectedUser(null); setFormErrors({}); }}>Cancel</button>
+                  <button type="button" className="btn btn-outline" onClick={() => { 
+                    setShowUserModal(false)
+                    setSelectedUser(null)
+                    setPropertyAssignments([])
+                    setFormErrors({})
+                  }}>Cancel</button>
                   <button type="submit" className="btn btn-primary">
                     {selectedUser ? 'Update User' : 'Create User'}
                   </button>
@@ -1437,7 +2064,56 @@ This is a sample document for demonstration purposes.`
 
               <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Documents</h3>
               <div className="recent-documents-list">
-                {userDocuments[selectedUser.id] && userDocuments[selectedUser.id].length > 0 ? (
+                {loadingDocuments ? (
+                  <p className="no-documents">Loading documents...</p>
+                ) : (apiDocuments[selectedUser.id] && apiDocuments[selectedUser.id].length > 0) ? (
+                  apiDocuments[selectedUser.id].map((doc) => {
+                    const uploadDate = doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : 'Unknown date'
+                    const fileType = doc.mimeType || 'application/pdf'
+                    const fileSize = doc.fileSize ? (doc.fileSize / 1024 / 1024).toFixed(2) : '0.00'
+                    
+                    return (
+                      <div key={doc.id} className="document-item">
+                        <div className="document-icon">
+                          {fileType.includes('pdf') ? <FileText size={20} /> : 
+                           fileType.includes('image') ? <ImageIcon size={20} /> : 
+                           fileType.includes('word') || fileType.includes('document') ? <File size={20} /> : <FileText size={20} />}
+                        </div>
+                        <div className="document-info">
+                          <div className="document-name">{doc.name}</div>
+                          <div className="document-meta">
+                            {uploadDate} • {fileType.split('/')[1]?.toUpperCase() || 'FILE'} • 
+                            {fileSize} MB
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button 
+                            className="action-btn-um download-btn"
+                            onClick={() => handleViewInBrowser(doc)}
+                            title="View in Browser"
+                          >
+                            <ExternalLink size={16} />
+                          </button>
+                          <button 
+                            className="action-btn-um download-btn"
+                            onClick={() => handleDownloadDocument(doc)}
+                            title="Download"
+                          >
+                            <Download size={16} />
+                          </button>
+                          <button 
+                            className="action-btn-um download-btn"
+                            onClick={() => handleDeleteDocument(doc)}
+                            title="Delete"
+                            style={{ color: '#ef4444' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (userDocuments[selectedUser.id] && userDocuments[selectedUser.id].length > 0) ? (
                   userDocuments[selectedUser.id].map((doc) => (
                     <div key={doc.id} className="document-item">
                       <div className="document-icon">
@@ -1452,13 +2128,30 @@ This is a sample document for demonstration purposes.`
                           {(doc.fileSize / 1024 / 1024).toFixed(2)} MB
                         </div>
                       </div>
-                      <button 
-                        className="action-btn-um download-btn"
-                        onClick={() => handleDownloadDocument(doc)}
-                        title="Download"
-                      >
-                        <Download size={16} />
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          className="action-btn-um download-btn"
+                          onClick={() => handleViewInBrowser(doc)}
+                          title="View in Browser"
+                        >
+                          <ExternalLink size={16} />
+                        </button>
+                        <button 
+                          className="action-btn-um download-btn"
+                          onClick={() => handleDownloadDocument(doc)}
+                          title="Download"
+                        >
+                          <Download size={16} />
+                        </button>
+                        <button 
+                          className="action-btn-um download-btn"
+                          onClick={() => handleDeleteDocument(doc)}
+                          title="Delete"
+                          style={{ color: '#ef4444' }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : selectedUser.documents > 0 ? (
@@ -1470,17 +2163,43 @@ This is a sample document for demonstration purposes.`
                         <div className="document-name">Welcome Letter</div>
                         <div className="document-meta">Uploaded on {selectedUser.joinDate} • PDF • 2.3 MB</div>
                       </div>
-                      <button 
-                        className="action-btn-um download-btn"
-                        onClick={() => handleDownloadDocument({
-                          name: 'Welcome_Letter',
-                          fileName: 'Welcome_Letter.pdf',
-                          fileType: 'application/pdf'
-                        })}
-                        title="Download"
-                      >
-                        <Download size={16} />
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          className="action-btn-um download-btn"
+                          onClick={() => handleViewInBrowser({
+                            name: 'Welcome_Letter',
+                            fileName: 'Welcome_Letter.pdf',
+                            fileType: 'application/pdf'
+                          })}
+                          title="View in Browser"
+                        >
+                          <ExternalLink size={16} />
+                        </button>
+                        <button 
+                          className="action-btn-um download-btn"
+                          onClick={() => handleDownloadDocument({
+                            name: 'Welcome_Letter',
+                            fileName: 'Welcome_Letter.pdf',
+                            fileType: 'application/pdf'
+                          })}
+                          title="Download"
+                        >
+                          <Download size={16} />
+                        </button>
+                        <button 
+                          className="action-btn-um download-btn"
+                          onClick={() => handleDeleteDocument({
+                            name: 'Welcome_Letter',
+                            fileName: 'Welcome_Letter.pdf',
+                            fileType: 'application/pdf',
+                            id: 'sample-welcome-letter'
+                          })}
+                          title="Delete"
+                          style={{ color: '#ef4444' }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : (

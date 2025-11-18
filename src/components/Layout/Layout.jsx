@@ -4,7 +4,7 @@ import Sidebar from '../Sidebar/Sidebar'
 import Header from '../Header/Header'
 import './Layout.css'
 
-function Layout() {
+function Layout({ onLogout }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const toggleSidebar = () => {
@@ -19,7 +19,7 @@ function Layout() {
     <div className="layout">
       <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
       <div className="main-content">
-        <Header onMenuClick={toggleSidebar} />
+        <Header onMenuClick={toggleSidebar} onLogout={onLogout} />
         <div className="content-area">
           <Outlet />
         </div>

@@ -11,8 +11,40 @@ import {
   Trash2,
   Building,
   User,
-  MapPin
+  MapPin,
+  Plus,
+  MoreHorizontal
 } from 'lucide-react'
+import PropertyForm from '../../components/PropertyForm/PropertyForm'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
@@ -24,10 +56,15 @@ function PropertyManagement() {
   const [selectedProperty, setSelectedProperty] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showEditProgressModal, setShowEditProgressModal] = useState(false)
+  const [showEditPropertyModal, setShowEditPropertyModal] = useState(false)
+  const [showAddPropertyModal, setShowAddPropertyModal] = useState(false)
+  const [editPropertyData, setEditPropertyData] = useState(null)
+  const [addPropertyData, setAddPropertyData] = useState(null)
   const [progressData, setProgressData] = useState(null)
   const [galleryImages, setGalleryImages] = useState([])
   const [loadingProgress, setLoadingProgress] = useState(false)
   const [loadingGallery, setLoadingGallery] = useState(false)
+  const [savingProperty, setSavingProperty] = useState(false)
   
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -37,6 +74,44 @@ function PropertyManagement() {
 
   // Projects list for filter
   const [projects, setProjects] = useState([])
+
+  // Helper function to format location as string
+  const formatLocation = (location) => {
+    if (!location) return 'N/A'
+    if (typeof location === 'string') return location
+    if (location.city && location.state) {
+      return `${location.city}, ${location.state}`
+    }
+    if (location.city) return location.city
+    if (location.address) return location.address
+    return 'N/A'
+  }
+
+  // Helper function to get project name from projectId
+  const getProjectName = (projectId) => {
+    if (!projectId) return 'N/A'
+    const project = projects.find(p => p.id === projectId || p._id === projectId)
+    return project?.name || 'N/A'
+  }
+
+  // Helper function to get status (handle both old and new format)
+  const getStatus = (property) => {
+    return property.status?.toLowerCase() || 'active'
+  }
+
+  // Helper function to get progress data (handle both old and new format)
+  const getProgress = (property) => {
+    if (property.progress) {
+      return {
+        percentage: property.progress.percentage || 0,
+        stage: property.progress.stage || ''
+      }
+    }
+    return {
+      percentage: property.progressPercentage || 0,
+      stage: property.currentStage || ''
+    }
+  }
 
   // Fetch projects for filter
   useEffect(() => {
@@ -86,9 +161,11 @@ function PropertyManagement() {
     return properties.filter(property => {
       // Search filter
       const searchLower = searchQuery.toLowerCase()
+      const locationStr = formatLocation(property.location)
+      const projectName = getProjectName(property.projectId)
       const matchesSearch = 
         property.flatNo?.toLowerCase().includes(searchLower) ||
-        property.projectName?.toLowerCase().includes(searchLower) ||
+        projectName?.toLowerCase().includes(searchLower) ||
         (property.users && property.users.some(u => 
           u?.name?.toLowerCase().includes(searchLower) || 
           u?.email?.toLowerCase().includes(searchLower)
@@ -97,19 +174,25 @@ function PropertyManagement() {
           property.user?.name?.toLowerCase().includes(searchLower) ||
           property.user?.email?.toLowerCase().includes(searchLower)
         )) ||
-        property.location?.toLowerCase().includes(searchLower)
+        locationStr?.toLowerCase().includes(searchLower)
 
       // Project filter
       const matchesProject = 
-        filterProject === 'All Projects' || property.projectName === filterProject
+        filterProject === 'All Projects' || projectName === filterProject
 
       // Status filter
+      const status = getStatus(property)
       const matchesStatus = 
-        filterStatus === 'All Status' || property.status === filterStatus
+        filterStatus === 'All Status' || status === filterStatus.toLowerCase()
 
       return matchesSearch && matchesProject && matchesStatus
     })
-  }, [properties, searchQuery, filterProject, filterStatus])
+  }, [properties, searchQuery, filterProject, filterStatus, projects])
+
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
@@ -158,6 +241,212 @@ function PropertyManagement() {
 
   const handleEditProgress = () => {
     setShowEditProgressModal(true)
+  }
+
+  const handleEditProperty = async (property) => {
+    setSelectedProperty(property)
+    
+    // Get progress data (handle both old and new format)
+    const progress = getProgress(property)
+    
+    // Normalize currentStage value to match radio button options (same logic as getDisplayStage)
+    let normalizedStage = ''
+    if (progress.stage && progress.stage.trim() !== '') {
+      const stageLower = progress.stage.toLowerCase()
+      if (stageLower.includes('foundation')) {
+        normalizedStage = 'foundation'
+      } else if (stageLower.includes('structure')) {
+        normalizedStage = 'structure'
+      } else if (stageLower.includes('finishing')) {
+        normalizedStage = 'finishing'
+      } else {
+        // If it doesn't match known stages, keep empty to show "None"
+        normalizedStage = ''
+      }
+    }
+    
+    // Initialize edit data with current property values
+    setEditPropertyData({
+      flatNo: property.flatNo || '',
+      buildingName: property.buildingName || '',
+      specifications: {
+        area: property.specifications?.area || '',
+        bedrooms: property.specifications?.bedrooms || '',
+        bathrooms: property.specifications?.bathrooms || '',
+        balconies: property.specifications?.balconies || '',
+        floor: property.specifications?.floor || '',
+        facing: property.specifications?.facing || ''
+      },
+      pricing: {
+        totalPrice: property.pricing?.totalPrice || '',
+        pricePerSqft: property.pricing?.pricePerSqft || '',
+        bookingAmount: property.pricing?.bookingAmount || ''
+      },
+      status: getStatus(property),
+      possessionDate: property.possessionDate ? new Date(property.possessionDate).toISOString().split('T')[0] : '',
+      progressPercentage: progress.percentage || 0,
+      currentStage: normalizedStage
+    })
+    
+    // Fetch gallery images when opening edit modal
+    await fetchPropertyGallery(property.id)
+    
+    setShowEditPropertyModal(true)
+  }
+
+  // Helper function to prepare property payload
+  const preparePropertyPayload = (propertyData, isEdit = false) => {
+    const payload = {
+      flatNo: propertyData.flatNo,
+      buildingName: propertyData.buildingName || undefined,
+      specifications: {
+        area: propertyData.specifications?.area ? parseFloat(propertyData.specifications.area) : undefined,
+        bedrooms: propertyData.specifications?.bedrooms ? parseInt(propertyData.specifications.bedrooms) : undefined,
+        bathrooms: propertyData.specifications?.bathrooms ? parseInt(propertyData.specifications.bathrooms) : undefined,
+        balconies: propertyData.specifications?.balconies ? parseInt(propertyData.specifications.balconies) : undefined,
+        floor: propertyData.specifications?.floor ? parseInt(propertyData.specifications.floor) : undefined,
+        facing: propertyData.specifications?.facing || undefined
+      },
+      pricing: {
+        totalPrice: propertyData.pricing?.totalPrice ? parseFloat(propertyData.pricing.totalPrice) : undefined,
+        pricePerSqft: propertyData.pricing?.pricePerSqft ? parseFloat(propertyData.pricing.pricePerSqft) : undefined,
+        bookingAmount: propertyData.pricing?.bookingAmount ? parseFloat(propertyData.pricing.bookingAmount) : undefined
+      },
+      status: propertyData.status || 'active',
+      possessionDate: propertyData.possessionDate ? new Date(propertyData.possessionDate) : undefined,
+      progressPercentage: propertyData.progressPercentage ? parseFloat(propertyData.progressPercentage) : 0,
+      currentStage: propertyData.currentStage || undefined
+    }
+
+    // Add projectId for create mode
+    if (!isEdit && propertyData.projectId) {
+      payload.projectId = propertyData.projectId
+    }
+
+    // Remove undefined values
+    Object.keys(payload).forEach(key => {
+      if (payload[key] === undefined) {
+        delete payload[key]
+      }
+    })
+    if (payload.specifications) {
+      Object.keys(payload.specifications).forEach(key => {
+        if (payload.specifications[key] === undefined) {
+          delete payload.specifications[key]
+        }
+      })
+      if (Object.keys(payload.specifications).length === 0) {
+        delete payload.specifications
+      }
+    }
+    if (payload.pricing) {
+      Object.keys(payload.pricing).forEach(key => {
+        if (payload.pricing[key] === undefined) {
+          delete payload.pricing[key]
+        }
+      })
+      if (Object.keys(payload.pricing).length === 0) {
+        delete payload.pricing
+      }
+    }
+
+    return payload
+  }
+
+  const handleSaveProperty = async () => {
+    if (!selectedProperty || !editPropertyData) return
+
+    try {
+      setSavingProperty(true)
+      const updatePayload = preparePropertyPayload(editPropertyData, true)
+
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatePayload)
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Property updated successfully!', 'success')
+        setShowEditPropertyModal(false)
+        setEditPropertyData(null)
+        setSelectedProperty(null)
+        // Refresh properties list
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to update property', 'error')
+      }
+    } catch (err) {
+      console.error('Error updating property:', err)
+      showNotification('Failed to update property', 'error')
+    } finally {
+      setSavingProperty(false)
+    }
+  }
+
+  const handleAddProperty = async () => {
+    if (!addPropertyData || !addPropertyData.projectId) {
+      showNotification('Please select a project', 'error')
+      return
+    }
+
+    try {
+      setSavingProperty(true)
+      const createPayload = preparePropertyPayload(addPropertyData, false)
+
+      const response = await fetch(`${API_BASE_URL}/admin/properties`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(createPayload)
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Property created successfully!', 'success')
+        setShowAddPropertyModal(false)
+        setAddPropertyData(null)
+        // Refresh properties list
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to create property', 'error')
+      }
+    } catch (err) {
+      console.error('Error creating property:', err)
+      showNotification('Failed to create property', 'error')
+    } finally {
+      setSavingProperty(false)
+    }
+  }
+
+  const handleOpenAddProperty = () => {
+    setAddPropertyData({
+      flatNo: '',
+      buildingName: '',
+      projectId: '',
+      specifications: {
+        area: '',
+        bedrooms: '',
+        bathrooms: '',
+        balconies: '',
+        floor: '',
+        facing: ''
+      },
+      pricing: {
+        totalPrice: '',
+        pricePerSqft: '',
+        bookingAmount: ''
+      },
+      status: 'active',
+      possessionDate: '',
+      progressPercentage: 0,
+      currentStage: ''
+    })
+    setShowAddPropertyModal(true)
   }
 
   const handleSaveProgress = async () => {
@@ -213,19 +502,21 @@ function PropertyManagement() {
     })
   }
 
-  const handleUploadGalleryImage = async (url, caption) => {
-    if (!selectedProperty || !url) return
+  const handleUploadGalleryImage = async (file, caption) => {
+    if (!selectedProperty || !file) return
 
     try {
+      // Create FormData for file upload
+      const formData = new FormData()
+      formData.append('image', file)
+      if (caption) {
+        formData.append('caption', caption)
+      }
+
       const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/gallery`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          url,
-          caption: caption || ''
-        })
+        body: formData
+        // Don't set Content-Type header - browser will set it automatically with boundary for FormData
       })
 
       const data = await response.json()
@@ -251,10 +542,189 @@ function PropertyManagement() {
   // Get unique project names for filter
   const uniqueProjects = useMemo(() => {
     const projectNames = properties
-      .map(p => p.projectName)
-      .filter((name, index, self) => name && self.indexOf(name) === index)
+      .map(p => getProjectName(p.projectId))
+      .filter((name, index, self) => name && name !== 'N/A' && self.indexOf(name) === index)
     return projectNames.sort()
-  }, [properties])
+  }, [properties, projects])
+
+  // Normalize current stage for display (matches radio button values)
+  const getDisplayStage = (stage) => {
+    if (!stage || stage.trim() === '') return 'None'
+    const stageLower = stage.toLowerCase()
+    if (stageLower.includes('foundation')) {
+      return 'Foundation'
+    } else if (stageLower.includes('structure')) {
+      return 'Structure'
+    } else if (stageLower.includes('finishing')) {
+      return 'Finishing'
+    }
+    // Return capitalized version if it doesn't match known stages
+    return stage.charAt(0).toUpperCase() + stage.slice(1).toLowerCase()
+  }
+
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      id: "propertyDetails",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Property Details" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        return (
+          <div className="property-cell-pm">
+            <div className="property-icon-pm">
+              <Home size={20} />
+            </div>
+            <div>
+              <div className="property-name-pm">Flat {property.flatNo}</div>
+              {property.buildingName && (
+                <div className="property-meta">{property.buildingName}</div>
+              )}
+              <div className="property-meta">
+                <MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                {formatLocation(property.location)}
+              </div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      id: "project",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Project" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        return (
+          <div className="project-info-pm">
+            <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
+            {getProjectName(property.projectId)}
+          </div>
+        )
+      },
+    },
+    {
+      id: "currentStage",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Current Stage" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const progress = getProgress(property)
+        return (
+          <span style={{ 
+            fontWeight: '500',
+            color: progress.stage && progress.stage.trim() !== '' ? 'var(--text-primary)' : 'var(--text-secondary)'
+          }}>
+            {getDisplayStage(progress.stage)}
+          </span>
+        )
+      },
+    },
+    {
+      id: "progressPercentage",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Progress Percentage" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const progress = getProgress(property)
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+            <span style={{ fontWeight: '600', minWidth: '50px', fontSize: '0.95em' }}>
+              {progress.percentage || 0}%
+            </span>
+            <div style={{ 
+              flex: 1, 
+              height: '10px', 
+              backgroundColor: '#e0e0e0', 
+              borderRadius: '5px', 
+              overflow: 'hidden',
+              minWidth: '120px',
+              maxWidth: '200px',
+              position: 'relative'
+            }}>
+              <div 
+                style={{ 
+                  width: `${Math.min(progress.percentage || 0, 100)}%`, 
+                  height: '100%', 
+                  backgroundColor: 'var(--primary-color, #4CAF50)',
+                  transition: 'width 0.3s ease',
+                  borderRadius: '5px'
+                }}
+              ></div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const status = getStatus(property)
+        return (
+          <span className={`status-badge ${
+            status === 'active' ? 'status-success' : 
+            status === 'completed' ? 'status-info' : 
+            'status-error'
+          }`}>
+            {status}
+          </span>
+        )
+      },
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const property = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(property)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditProperty(property)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Property
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: filteredProperties,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
 
   return (
     <div className="property-management-page">
@@ -263,6 +733,10 @@ function PropertyManagement() {
           <h1 className="page-title-main">Property Management</h1>
           <p className="page-subtitle">Manage all properties and their assignments</p>
         </div>
+        <button className="btn btn-primary" onClick={handleOpenAddProperty}>
+          <Plus size={18} style={{ marginRight: '8px' }} />
+          Add Property
+        </button>
       </div>
 
       {/* Stats Overview */}
@@ -279,16 +753,16 @@ function PropertyManagement() {
           <div className="stat-icon-pm"><CheckCircle size={24} /></div>
           <div>
             <h3>Active Properties</h3>
-            <p className="stat-value-pm">{properties.filter(p => p.status === 'active').length}</p>
-            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => p.status === 'active').length / properties.length) * 100) : 0}% active</span>
+            <p className="stat-value-pm">{properties.filter(p => getStatus(p) === 'active').length}</p>
+            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => getStatus(p) === 'active').length / properties.length) * 100) : 0}% active</span>
           </div>
         </div>
         <div className="stat-card-pm">
           <div className="stat-icon-pm"><XCircle size={24} /></div>
           <div>
             <h3>Completed</h3>
-            <p className="stat-value-pm">{properties.filter(p => p.status === 'completed').length}</p>
-            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => p.status === 'completed').length / properties.length) * 100) : 0}% completed</span>
+            <p className="stat-value-pm">{properties.filter(p => getStatus(p) === 'completed').length}</p>
+            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => getStatus(p) === 'completed').length / properties.length) * 100) : 0}% completed</span>
           </div>
         </div>
         <div className="stat-card-pm">
@@ -357,155 +831,72 @@ function PropertyManagement() {
             </button>
           </div>
         ) : (
-        <table className="properties-table-pm">
-          <thead>
-            <tr>
-              <th>Property Details</th>
-              <th>Project</th>
-              <th>Assigned User</th>
-              <th>Broker</th>
-              <th>Specifications</th>
-              <th>Pricing</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProperties.length === 0 ? (
-              <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  {properties.length === 0 ? 'No properties found. Properties will appear here when users are assigned to projects.' : 'No properties found matching your criteria'}
-                </td>
-              </tr>
-            ) : (
-              filteredProperties.map((property) => (
-              <tr key={property.id}>
-                <td>
-                  <div className="property-cell-pm">
-                    <div className="property-icon-pm">
-                      <Home size={20} />
-                    </div>
-                    <div>
-                      <div className="property-name-pm">Flat {property.flatNo}</div>
-                      {property.buildingName && (
-                        <div className="property-meta">{property.buildingName}</div>
-                      )}
-                      <div className="property-meta">
-                        <MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                        {property.location}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div className="project-info-pm">
-                    <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
-                    {property.projectName || 'N/A'}
-                  </div>
-                </td>
-                <td>
-                  {property.users && property.users.length > 0 ? (
-                    <div className="users-list-pm">
-                      {property.users.map((user, idx) => (
-                        <div key={user.id || idx} className="user-info-pm" style={{ marginBottom: idx < property.users.length - 1 ? '8px' : '0' }}>
-                          <User size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
-                          <div>
-                            <div className="user-name-pm">{user.name}</div>
-                            <div className="user-meta">{user.email}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : property.user ? (
-                    <div className="user-info-pm">
-                      <User size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
-                      <div>
-                        <div className="user-name-pm">{property.user.name}</div>
-                        <div className="user-meta">{property.user.email}</div>
-                      </div>
-                    </div>
+          <>
+            <div className="flex items-center py-4">
+              <Input
+                placeholder="Filter by flat number or project..."
+                value={(table.getColumn("propertyDetails")?.getFilterValue() ?? "")}
+                onChange={(event) =>
+                  table.getColumn("propertyDetails")?.setFilterValue(event.target.value)
+                }
+                className="max-w-sm"
+              />
+              <DataTableViewOptions table={table} />
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        return (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && "selected"}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
                   ) : (
-                    <span className="no-assignment">Not Assigned</span>
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        {properties.length === 0 ? 'No properties found. Properties will appear here when users are assigned to projects.' : 'No properties found matching your criteria'}
+                      </TableCell>
+                    </TableRow>
                   )}
-                </td>
-                <td>
-                  {property.brokers && property.brokers.length > 0 ? (
-                    <div className="brokers-list-pm">
-                      {property.brokers.map((broker, idx) => (
-                        <div key={broker.id || idx} style={{ marginBottom: idx < property.brokers.length - 1 ? '8px' : '0' }}>
-                          <div className="broker-name-pm">{broker.name}</div>
-                          <div className="broker-meta">{broker.company}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : property.broker ? (
-                    <div>
-                      <div className="broker-name-pm">{property.broker.name}</div>
-                      <div className="broker-meta">{property.broker.company}</div>
-                    </div>
-                  ) : (
-                    <span className="no-assignment">No Broker</span>
-                  )}
-                </td>
-                <td>
-                  <div className="specs-info-pm">
-                    {property.specifications?.area && (
-                      <div>{property.specifications.area} sqft</div>
-                    )}
-                    {property.specifications?.bedrooms && (
-                      <div className="specs-meta">{property.specifications.bedrooms} BHK</div>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  {property.pricing?.totalPrice ? (
-                    <div>
-                      <div className="price-pm">₹{property.pricing.totalPrice.toLocaleString('en-IN')}</div>
-                      {property.pricing?.pricePerSqft && (
-                        <div className="price-meta">₹{property.pricing.pricePerSqft.toLocaleString('en-IN')}/sqft</div>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="no-assignment">N/A</span>
-                  )}
-                </td>
-                <td>
-                  <span className={`status-badge ${
-                    property.status === 'active' ? 'status-success' : 
-                    property.status === 'completed' ? 'status-info' : 
-                    'status-error'
-                  }`}>
-                    {property.status || 'active'}
-                  </span>
-                </td>
-                <td>
-                  <div className="action-buttons">
-                    <button 
-                      className="action-btn-pm" 
-                      title="View Details"
-                      onClick={() => handleViewDetails(property)}
-                    >
-                      <Eye size={16} />
-                    </button>
-                    <button 
-                      className="action-btn-pm" 
-                      title="Edit Progress"
-                      onClick={() => {
-                        setSelectedProperty(property)
-                        fetchPropertyProgress(property.id).then(() => {
-                          setShowEditProgressModal(true)
-                        })
-                      }}
-                    >
-                      <Edit size={16} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                </TableBody>
+              </Table>
+            </div>
+            <div className="py-4">
+              <DataTablePagination table={table} />
+            </div>
+          </>
         )}
       </div>
 
@@ -535,31 +926,53 @@ function PropertyManagement() {
                 </div>
                 <div className="detail-item">
                   <label>Project</label>
-                  <p>{selectedProperty.projectName || 'N/A'}</p>
+                  <p>{getProjectName(selectedProperty.projectId)}</p>
                 </div>
                 <div className="detail-item">
                   <label>Location</label>
-                  <p>{selectedProperty.location || 'N/A'}</p>
+                  <p>{formatLocation(selectedProperty.location)}</p>
                 </div>
                 <div className="detail-item">
                   <label>Status</label>
                   <p>
                     <span className={`status-badge ${
-                      selectedProperty.status === 'active' ? 'status-success' : 
-                      selectedProperty.status === 'completed' ? 'status-info' : 
+                      getStatus(selectedProperty) === 'active' ? 'status-success' : 
+                      getStatus(selectedProperty) === 'completed' ? 'status-info' : 
                       'status-error'
                     }`}>
-                      {selectedProperty.status || 'active'}
+                      {getStatus(selectedProperty)}
                     </span>
                   </p>
                 </div>
                 <div className="detail-item">
-                  <label>Progress</label>
-                  <p>{selectedProperty.progressPercentage || 0}%</p>
+                  <label>Progress Percentage</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontWeight: '600', fontSize: '1em' }}>
+                      {getProgress(selectedProperty).percentage || 0}%
+                    </span>
+                    <div style={{ 
+                      flex: 1, 
+                      height: '10px', 
+                      backgroundColor: '#e0e0e0', 
+                      borderRadius: '5px', 
+                      overflow: 'hidden',
+                      maxWidth: '150px'
+                    }}>
+                      <div 
+                        style={{ 
+                          width: `${Math.min(getProgress(selectedProperty).percentage || 0, 100)}%`, 
+                          height: '100%', 
+                          backgroundColor: 'var(--primary-color, #4CAF50)',
+                          transition: 'width 0.3s ease',
+                          borderRadius: '5px'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
                 <div className="detail-item">
                   <label>Current Stage</label>
-                  <p>{selectedProperty.currentStage || progressData?.currentStage || 'N/A'}</p>
+                  <p>{getDisplayStage(getProgress(selectedProperty).stage)}</p>
                 </div>
                 {selectedProperty.specifications?.area && (
                   <div className="detail-item">
@@ -589,12 +1002,6 @@ function PropertyManagement() {
                   <div className="detail-item">
                     <label>Booking Amount</label>
                     <p>₹{selectedProperty.pricing.bookingAmount.toLocaleString('en-IN')}</p>
-                  </div>
-                )}
-                {selectedProperty.possessionDate && (
-                  <div className="detail-item">
-                    <label>Possession Date</label>
-                    <p>{new Date(selectedProperty.possessionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                   </div>
                 )}
               </div>
@@ -645,84 +1052,6 @@ function PropertyManagement() {
                 </div>
               )}
 
-              {/* Construction Progress Section */}
-              <div className="details-section" style={{ marginTop: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h4>Construction Progress</h4>
-                  <button className="btn btn-primary btn-sm" onClick={handleEditProgress}>
-                    <Edit size={14} style={{ marginRight: '4px' }} />
-                    Edit Progress
-                  </button>
-                </div>
-                {loadingProgress ? (
-                  <p style={{ color: 'var(--text-secondary)' }}>Loading progress...</p>
-                ) : progressData ? (
-                  <div>
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span>Overall Progress</span>
-                        <span style={{ fontWeight: '600' }}>{progressData.overallProgress}%</span>
-                      </div>
-                      <div className="progress-bar" style={{ height: '8px', backgroundColor: '#e0e0e0', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div 
-                          className="progress-fill" 
-                          style={{ 
-                            width: `${progressData.overallProgress}%`, 
-                            height: '100%', 
-                            backgroundColor: 'var(--primary-color)',
-                            transition: 'width 0.3s ease'
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                    <div>
-                      <h5 style={{ marginBottom: '12px', fontSize: '0.9em', color: 'var(--text-secondary)' }}>Construction Stages</h5>
-                      <div className="stages-list">
-                        {progressData.stages && progressData.stages.length > 0 ? (
-                          progressData.stages.map((stage, index) => (
-                            <div key={index} className="stage-item" style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              padding: '8px 0',
-                              borderBottom: index < progressData.stages.length - 1 ? '1px solid #e0e0e0' : 'none'
-                            }}>
-                              <div style={{ marginRight: '12px' }}>
-                                {stage.completed ? (
-                                  <CheckCircle size={20} style={{ color: 'var(--success-color, #28a745)' }} />
-                                ) : (
-                                  <div style={{ width: '20px', height: '20px', border: '2px solid #ccc', borderRadius: '50%' }}></div>
-                                )}
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: '500' }}>{stage.name}</div>
-                                {stage.percentageComplete > 0 && (
-                                  <div style={{ fontSize: '0.85em', color: 'var(--text-secondary)' }}>
-                                    {stage.percentageComplete}% complete
-                                  </div>
-                                )}
-                              </div>
-                              <div>
-                                <span className={`status-badge ${
-                                  stage.status === 'completed' ? 'status-success' :
-                                  stage.status === 'in-progress' ? 'status-info' :
-                                  'status-warning'
-                                }`} style={{ fontSize: '0.75em', padding: '2px 8px' }}>
-                                  {stage.status || 'pending'}
-                                </span>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p style={{ color: 'var(--text-secondary)' }}>No stages defined</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p style={{ color: 'var(--text-secondary)' }}>No progress data available</p>
-                )}
-              </div>
-
               {/* Project Gallery Section */}
               <div className="details-section" style={{ marginTop: '24px' }}>
                 <h4>Project Gallery</h4>
@@ -767,48 +1096,6 @@ function PropertyManagement() {
                 ) : (
                   <p style={{ color: 'var(--text-secondary)' }}>No gallery images yet</p>
                 )}
-                <div style={{ marginTop: '12px' }}>
-                  <input
-                    type="text"
-                    placeholder="Image URL"
-                    id="gallery-url-input"
-                    style={{ 
-                      width: '100%', 
-                      padding: '8px', 
-                      marginBottom: '8px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px'
-                    }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Caption (optional)"
-                    id="gallery-caption-input"
-                    style={{ 
-                      width: '100%', 
-                      padding: '8px', 
-                      marginBottom: '8px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px'
-                    }}
-                  />
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => {
-                      const urlInput = document.getElementById('gallery-url-input')
-                      const captionInput = document.getElementById('gallery-caption-input')
-                      if (urlInput.value) {
-                        handleUploadGalleryImage(urlInput.value, captionInput.value)
-                        urlInput.value = ''
-                        captionInput.value = ''
-                      } else {
-                        showNotification('Please enter an image URL', 'error')
-                      }
-                    }}
-                  >
-                    Upload Gallery Image
-                  </button>
-                </div>
               </div>
 
               <div className="modal-actions">
@@ -981,6 +1268,99 @@ function PropertyManagement() {
                 </button>
                 <button className="btn btn-primary" onClick={handleSaveProgress}>
                   Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Property Modal */}
+      {showAddPropertyModal && addPropertyData && (
+        <div className="modal-overlay" onClick={() => setShowAddPropertyModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Add New Property</h2>
+              <button className="close-btn" onClick={() => {
+                setShowAddPropertyModal(false)
+                setAddPropertyData(null)
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <PropertyForm
+                propertyData={addPropertyData}
+                onChange={setAddPropertyData}
+                projects={projects}
+                isEditMode={false}
+                showGallery={false}
+              />
+              <div className="modal-actions" style={{ marginTop: '24px' }}>
+                <button 
+                  className="btn btn-outline" 
+                  onClick={() => {
+                    setShowAddPropertyModal(false)
+                    setAddPropertyData(null)
+                  }}
+                  disabled={savingProperty}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleAddProperty}
+                  disabled={savingProperty}
+                >
+                  {savingProperty ? 'Creating...' : 'Create Property'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Property Modal */}
+      {showEditPropertyModal && editPropertyData && selectedProperty && (
+        <div className="modal-overlay" onClick={() => setShowEditPropertyModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Edit Property Details</h2>
+              <button className="close-btn" onClick={() => {
+                setShowEditPropertyModal(false)
+                setGalleryImages([])
+                setEditPropertyData(null)
+                setSelectedProperty(null)
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <PropertyForm
+                propertyData={editPropertyData}
+                onChange={setEditPropertyData}
+                projects={projects}
+                isEditMode={true}
+                showGallery={true}
+                galleryImages={galleryImages}
+                loadingGallery={loadingGallery}
+                onUploadGalleryImage={handleUploadGalleryImage}
+              />
+              <div className="modal-actions" style={{ marginTop: '24px' }}>
+                <button 
+                  className="btn btn-outline" 
+                  onClick={() => {
+                    setShowEditPropertyModal(false)
+                    setGalleryImages([])
+                    setEditPropertyData(null)
+                    setSelectedProperty(null)
+                  }}
+                  disabled={savingProperty}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleSaveProperty}
+                  disabled={savingProperty}
+                >
+                  {savingProperty ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>

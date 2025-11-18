@@ -1,80 +1,151 @@
 .property-management-page {
   width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .property-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .stat-card-pm {
-  background: var(--card-bg);
-  border-radius: 12px;
-  padding: 24px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  padding: 20px;
   display: flex;
   align-items: center;
   gap: 16px;
-  box-shadow: var(--shadow);
+  transition: all 0.2s ease;
+}
+
+.stat-card-pm:hover {
+  border-color: hsl(var(--border));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .stat-icon-pm {
-  width: 60px;
-  height: 60px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--blue-light);
-  border-radius: 12px;
-  color: var(--primary-color);
+  background: hsl(var(--muted));
+  border-radius: 8px;
+  color: hsl(var(--muted-foreground));
+  flex-shrink: 0;
+  font-size: 24px;
 }
 
 .stat-card-pm h3 {
-  font-size: 14px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
   font-weight: 500;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .stat-value-pm {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
-  color: var(--primary-color);
+  color: hsl(var(--foreground));
   margin: 0 0 4px 0;
+  line-height: 1.2;
 }
 
 .properties-table-card {
   padding: 0;
   overflow-x: auto;
+  overflow-y: visible;
+  border-radius: 8px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  position: relative;
+  max-width: 100%;
+}
+
+.properties-table-card::-webkit-scrollbar {
+  height: 8px;
+}
+
+.properties-table-card::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+.properties-table-card::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+.properties-table-card::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
 }
 
 .properties-table-pm {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: hsl(var(--card));
 }
 
 .properties-table-pm thead {
-  background: var(--blue-light);
+  background: hsl(var(--muted));
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .properties-table-pm th {
-  padding: 16px;
+  padding: 12px 16px;
   text-align: left;
   font-weight: 600;
-  color: var(--text-primary);
-  font-size: 14px;
-  border-bottom: 2px solid var(--border-color);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  border: none;
+  position: relative;
+}
+
+.properties-table-pm th:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 25%;
+  height: 50%;
+  width: 1px;
+  background: hsl(var(--border));
+}
+
+.properties-table-pm tbody {
+  background: hsl(var(--card));
 }
 
 .properties-table-pm td {
   padding: 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid hsl(var(--border));
   font-size: 14px;
+  background: hsl(var(--card));
+  transition: all 0.2s ease;
+}
+
+.properties-table-pm tbody tr {
+  transition: all 0.2s ease;
 }
 
 .properties-table-pm tbody tr:hover {
-  background: var(--blue-light);
+  background: hsl(var(--muted) / 0.5);
+}
+
+.properties-table-pm tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .property-cell-pm {
@@ -193,26 +264,27 @@
 
 .status-badge {
   display: inline-block;
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   text-transform: capitalize;
+  letter-spacing: 0.3px;
 }
 
 .status-success {
-  background: #d4edda;
-  color: #155724;
+  background: hsl(142 76% 36% / 0.1);
+  color: hsl(142 76% 36%);
 }
 
 .status-info {
-  background: #d1ecf1;
-  color: #0c5460;
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
 }
 
 .status-error {
-  background: #f8d7da;
-  color: #721c24;
+  background: hsl(0 84% 60% / 0.1);
+  color: hsl(0 84% 60%);
 }
 
 .details-section {
