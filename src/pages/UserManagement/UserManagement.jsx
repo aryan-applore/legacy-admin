@@ -271,7 +271,7 @@ function UserManagement() {
         setLoading(true)
         setError(null)
         // Fetch users with properties included
-        const response = await fetch(`${API_BASE_URL}/users?includeProperties=true`)
+        const response = await fetch(`${API_BASE_URL}/buyers?includeProperties=true`)
         const data = await response.json()
         
         if (data.success && data.data) {
@@ -524,7 +524,7 @@ function UserManagement() {
       if (selectedUser) {
         // Update existing user
         userId = selectedUser.id
-        response = await fetch(`${API_BASE_URL}/users/${selectedUser.id}`, {
+        response = await fetch(`${API_BASE_URL}/buyers/${selectedUser.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json'
@@ -537,7 +537,7 @@ function UserManagement() {
           showNotification('Password is required for new users', 'error')
           return
         }
-        response = await fetch(`${API_BASE_URL}/users`, {
+        response = await fetch(`${API_BASE_URL}/buyers`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -561,7 +561,7 @@ function UserManagement() {
               showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: Authentication required. Please log in as admin.`, 'error')
             } else {
               // Use the new assign-properties endpoint for multiple assignments
-              const assignResponse = await fetch(`${API_BASE_URL}/users/${userId}/assign-properties`, {
+              const assignResponse = await fetch(`${API_BASE_URL}/buyers/${userId}/assign-properties`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -599,7 +599,7 @@ function UserManagement() {
         }
         
         // Refresh users list
-        const fetchResponse = await fetch(`${API_BASE_URL}/users?includeProperties=true`)
+        const fetchResponse = await fetch(`${API_BASE_URL}/buyers?includeProperties=true`)
         const fetchData = await fetchResponse.json()
         
         if (fetchData.success && fetchData.data) {
@@ -679,7 +679,7 @@ function UserManagement() {
   const handleDeleteUser = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
       try {
-        const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+        const response = await fetch(`${API_BASE_URL}/buyers/${userId}`, {
           method: 'DELETE'
         })
         
@@ -757,16 +757,15 @@ function UserManagement() {
     // Fetch documents from API for this user
     try {
       setLoadingDocuments(true)
-      // Note: The API endpoint should be /api/documents?userId=... but we need to check the actual endpoint
-      // For now, we'll fetch all documents and filter by userId on the frontend
-      // Or we can use the user's documents endpoint if available
+      // Note: The API endpoint uses /api/documents?buyerId=... for admin users
+      // The API filters documents by buyerId query parameter (for admin) or authenticated buyer
       const token = localStorage.getItem('adminToken')
       if (!token) {
         showNotification('Please log in to view documents', 'error')
         return
       }
-      // For admin users, fetch documents for the selected user
-      const url = `${API_BASE_URL}/documents${user.id ? `?userId=${user.id}` : ''}`
+      // For admin users, fetch documents for the selected buyer
+      const url = `${API_BASE_URL}/documents${user.id ? `?buyerId=${user.id}` : ''}`
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -777,7 +776,7 @@ function UserManagement() {
       if (response.ok) {
         const data = await response.json()
         if (data.success && data.data && data.data.documents) {
-          // The API filters documents by userId query parameter (for admin) or authenticated user
+          // The API filters documents by buyerId query parameter (for admin) or authenticated buyer
           // Map documents to ensure correct format
           const userDocs = data.data.documents.map(doc => ({
             ...doc,
@@ -839,7 +838,7 @@ function UserManagement() {
       uploadFormData.append('documentTitle', documentTitle)
       // For admin users, include the selected user's ID
       if (selectedUser && selectedUser.id) {
-        uploadFormData.append('userId', selectedUser.id)
+        uploadFormData.append('buyerId', selectedUser.id)
       }
       if (description) {
         uploadFormData.append('description', description)

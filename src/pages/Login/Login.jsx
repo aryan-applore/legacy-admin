@@ -30,15 +30,15 @@ function Login({ onLogin }) {
       const data = await response.json()
 
       if (data.success && data.token) {
-        // Check if user has admin role
-        if (data.user && data.user.role === 'admin') {
+        // Check if account has admin role
+        if (data.account && data.account.role === 'admin') {
           // Store token in localStorage
           localStorage.setItem('adminToken', data.token)
-          localStorage.setItem('adminUser', JSON.stringify(data.user))
+          localStorage.setItem('adminUser', JSON.stringify(data.account))
           
           // Call onLogin callback
           if (onLogin) {
-            onLogin(data.token, data.user)
+            onLogin(data.token, data.account)
           }
         } else {
           setError('Access denied. Admin role required.')
