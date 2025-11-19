@@ -162,7 +162,7 @@ function PropertyManagement() {
       // Search filter
       const searchLower = searchQuery.toLowerCase()
       const locationStr = formatLocation(property.location)
-      const projectName = getProjectName(property.projectId)
+      const projectName = property.project?.name || getProjectName(property.projectId)
       const matchesSearch = 
         property.flatNo?.toLowerCase().includes(searchLower) ||
         projectName?.toLowerCase().includes(searchLower) ||
@@ -298,24 +298,24 @@ function PropertyManagement() {
   const preparePropertyPayload = (propertyData, isEdit = false) => {
     const payload = {
       flatNo: propertyData.flatNo,
-      buildingName: propertyData.buildingName || undefined,
+      buildingName: propertyData.buildingName !== undefined ? propertyData.buildingName : undefined,
       specifications: {
-        area: propertyData.specifications?.area ? parseFloat(propertyData.specifications.area) : undefined,
-        bedrooms: propertyData.specifications?.bedrooms ? parseInt(propertyData.specifications.bedrooms) : undefined,
-        bathrooms: propertyData.specifications?.bathrooms ? parseInt(propertyData.specifications.bathrooms) : undefined,
-        balconies: propertyData.specifications?.balconies ? parseInt(propertyData.specifications.balconies) : undefined,
-        floor: propertyData.specifications?.floor ? parseInt(propertyData.specifications.floor) : undefined,
-        facing: propertyData.specifications?.facing || undefined
+        area: propertyData.specifications?.area !== undefined && propertyData.specifications?.area !== '' ? parseFloat(propertyData.specifications.area) : undefined,
+        bedrooms: propertyData.specifications?.bedrooms !== undefined && propertyData.specifications?.bedrooms !== '' ? parseInt(propertyData.specifications.bedrooms) : undefined,
+        bathrooms: propertyData.specifications?.bathrooms !== undefined && propertyData.specifications?.bathrooms !== '' ? parseInt(propertyData.specifications.bathrooms) : undefined,
+        balconies: propertyData.specifications?.balconies !== undefined && propertyData.specifications?.balconies !== '' ? parseInt(propertyData.specifications.balconies) : undefined,
+        floor: propertyData.specifications?.floor !== undefined && propertyData.specifications?.floor !== '' ? parseInt(propertyData.specifications.floor) : undefined,
+        facing: propertyData.specifications?.facing !== undefined && propertyData.specifications?.facing !== '' ? propertyData.specifications.facing : undefined
       },
       pricing: {
-        totalPrice: propertyData.pricing?.totalPrice ? parseFloat(propertyData.pricing.totalPrice) : undefined,
-        pricePerSqft: propertyData.pricing?.pricePerSqft ? parseFloat(propertyData.pricing.pricePerSqft) : undefined,
-        bookingAmount: propertyData.pricing?.bookingAmount ? parseFloat(propertyData.pricing.bookingAmount) : undefined
+        totalPrice: propertyData.pricing?.totalPrice !== undefined && propertyData.pricing?.totalPrice !== '' ? parseFloat(propertyData.pricing.totalPrice) : undefined,
+        pricePerSqft: propertyData.pricing?.pricePerSqft !== undefined && propertyData.pricing?.pricePerSqft !== '' ? parseFloat(propertyData.pricing.pricePerSqft) : undefined,
+        bookingAmount: propertyData.pricing?.bookingAmount !== undefined && propertyData.pricing?.bookingAmount !== '' ? parseFloat(propertyData.pricing.bookingAmount) : undefined
       },
       status: propertyData.status || 'active',
       possessionDate: propertyData.possessionDate ? new Date(propertyData.possessionDate) : undefined,
-      progressPercentage: propertyData.progressPercentage ? parseFloat(propertyData.progressPercentage) : 0,
-      currentStage: propertyData.currentStage || undefined
+      progressPercentage: propertyData.progressPercentage !== undefined ? (propertyData.progressPercentage === '' ? 0 : parseFloat(propertyData.progressPercentage) || 0) : undefined,
+      currentStage: propertyData.currentStage !== undefined && propertyData.currentStage !== '' ? propertyData.currentStage : undefined
     }
 
     // Add projectId for create mode
@@ -449,6 +449,34 @@ function PropertyManagement() {
     setShowAddPropertyModal(true)
   }
 
+  const handleDeleteProperty = async (propertyId) => {
+    if (!window.confirm('Are you sure you want to delete this property? This action cannot be undone and will also delete all related documents and payments.')) {
+      return
+    }
+
+    try {
+      showNotification('Deleting property...', 'info')
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Property deleted successfully!', 'success')
+        // Refresh properties list
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to delete property', 'error')
+      }
+    } catch (err) {
+      console.error('Error deleting property:', err)
+      showNotification('Failed to delete property', 'error')
+    }
+  }
+
   const handleSaveProgress = async () => {
     if (!selectedProperty || !progressData) return
 
@@ -542,7 +570,7 @@ function PropertyManagement() {
   // Get unique project names for filter
   const uniqueProjects = useMemo(() => {
     const projectNames = properties
-      .map(p => getProjectName(p.projectId))
+      .map(p => p.project?.name || getProjectName(p.projectId))
       .filter((name, index, self) => name && name !== 'N/A' && self.indexOf(name) === index)
     return projectNames.sort()
   }, [properties, projects])
@@ -566,6 +594,9 @@ function PropertyManagement() {
   const columns = useMemo(() => [
     {
       id: "propertyDetails",
+      size: 280,
+      minSize: 250,
+      maxSize: 350,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Property Details" />
       ),
@@ -592,69 +623,180 @@ function PropertyManagement() {
     },
     {
       id: "project",
+      size: 200,
+      minSize: 150,
+      maxSize: 250,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Project" />
       ),
       cell: ({ row }) => {
         const property = row.original
+        // Use project name from property response if available, otherwise lookup
+        const projectName = property.project?.name || getProjectName(property.projectId)
         return (
           <div className="project-info-pm">
             <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
-            {getProjectName(property.projectId)}
+            {projectName}
+          </div>
+        )
+      },
+    },
+    {
+      id: "buyer",
+      size: 180,
+      minSize: 150,
+      maxSize: 220,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Buyer" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        // Handle both users array and user single object, also check buyers array
+        const buyers = property.buyers || (property.users ? (Array.isArray(property.users) ? property.users : [property.users]) : []) || (property.user ? [property.user] : [])
+        
+        if (!buyers || buyers.length === 0) {
+          return (
+            <span className="no-assignment" style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
+              Not assigned
+            </span>
+          )
+        }
+        
+        // Show first buyer, or count if multiple
+        const firstBuyer = buyers[0]
+        const buyerCount = buyers.length
+        
+        return (
+          <div className="user-info-pm">
+            <User size={16} style={{ marginRight: '6px', color: 'hsl(var(--primary))', flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <div className="user-name-pm" style={{ 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis', 
+                whiteSpace: 'nowrap',
+                maxWidth: '140px'
+              }}>
+                {firstBuyer?.name || 'N/A'}
+              </div>
+              {buyerCount > 1 && (
+                <div className="broker-meta" style={{ fontSize: '11px', marginTop: '2px' }}>
+                  +{buyerCount - 1} more
+                </div>
+              )}
+            </div>
           </div>
         )
       },
     },
     {
       id: "currentStage",
+      size: 150,
+      minSize: 120,
+      maxSize: 180,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Current Stage" />
       ),
       cell: ({ row }) => {
         const property = row.original
         const progress = getProgress(property)
+        const stage = getDisplayStage(progress.stage)
+        const getStageColor = (s) => {
+          const stageLower = s.toLowerCase()
+          if (stageLower.includes('foundation')) return 'hsl(25 95% 53%)'
+          if (stageLower.includes('structure')) return 'hsl(38 92% 50%)'
+          if (stageLower.includes('finishing')) return 'hsl(142 76% 36%)'
+          return 'hsl(var(--muted-foreground))'
+        }
+        
         return (
-          <span style={{ 
-            fontWeight: '500',
-            color: progress.stage && progress.stage.trim() !== '' ? 'var(--text-primary)' : 'var(--text-secondary)'
-          }}>
-            {getDisplayStage(progress.stage)}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: stage !== 'None' ? getStageColor(stage) : 'hsl(var(--muted-foreground))',
+              boxShadow: stage !== 'None' ? `0 0 8px ${getStageColor(stage)}60` : 'none'
+            }}></div>
+            <span style={{ 
+              fontWeight: '600',
+              color: stage !== 'None' ? 'hsl(var(--foreground)' : 'hsl(var(--muted-foreground))',
+              fontSize: '14px'
+            }}>
+              {stage}
+            </span>
+          </div>
         )
       },
     },
     {
       id: "progressPercentage",
+      size: 80,
+      minSize: 70,
+      maxSize: 90,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Progress Percentage" />
+        <DataTableColumnHeader column={column} title="Progress" />
       ),
       cell: ({ row }) => {
         const property = row.original
         const progress = getProgress(property)
+        const percentage = progress.percentage || 0
+        const getProgressColor = (pct) => {
+          if (pct >= 75) return 'hsl(142 76% 36%)'
+          if (pct >= 50) return 'hsl(38 92% 50%)'
+          if (pct >= 25) return 'hsl(25 95% 53%)'
+          return 'hsl(0 84% 60%)'
+        }
+        
+        const size = 48
+        const strokeWidth = 4
+        const radius = (size - strokeWidth) / 2
+        const circumference = 2 * Math.PI * radius
+        const offset = circumference - (percentage / 100) * circumference
+        const color = getProgressColor(percentage)
+        
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-            <span style={{ fontWeight: '600', minWidth: '50px', fontSize: '0.95em' }}>
-              {progress.percentage || 0}%
-            </span>
-            <div style={{ 
-              flex: 1, 
-              height: '10px', 
-              backgroundColor: '#e0e0e0', 
-              borderRadius: '5px', 
-              overflow: 'hidden',
-              minWidth: '120px',
-              maxWidth: '200px',
-              position: 'relative'
-            }}>
-              <div 
-                style={{ 
-                  width: `${Math.min(progress.percentage || 0, 100)}%`, 
-                  height: '100%', 
-                  backgroundColor: 'var(--primary-color, #4CAF50)',
-                  transition: 'width 0.3s ease',
-                  borderRadius: '5px'
-                }}
-              ></div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+            <div style={{ position: 'relative', width: size, height: size }}>
+              <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+                {/* Background circle */}
+                <circle
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={radius}
+                  fill="none"
+                  stroke="hsl(var(--muted))"
+                  strokeWidth={strokeWidth}
+                />
+                {/* Progress circle */}
+                <circle
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={radius}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={circumference}
+                  strokeDashoffset={offset}
+                  strokeLinecap="round"
+                  style={{
+                    transition: 'stroke-dashoffset 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    filter: `drop-shadow(0 0 4px ${color}60)`
+                  }}
+                />
+              </svg>
+              {/* Percentage text in center */}
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: 'hsl(var(--foreground))',
+                lineHeight: '1'
+              }}>
+                {percentage}%
+              </div>
             </div>
           </div>
         )
@@ -662,6 +804,9 @@ function PropertyManagement() {
     },
     {
       accessorKey: "status",
+      size: 120,
+      minSize: 100,
+      maxSize: 140,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Status" />
       ),
@@ -681,6 +826,9 @@ function PropertyManagement() {
     },
     {
       id: "actions",
+      size: 60,
+      minSize: 50,
+      maxSize: 70,
       enableHiding: false,
       cell: ({ row }) => {
         const property = row.original
@@ -701,6 +849,14 @@ function PropertyManagement() {
               <DropdownMenuItem onClick={() => handleEditProperty(property)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Property
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => handleDeleteProperty(property.id)}
+                className="text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Property
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -926,7 +1082,7 @@ function PropertyManagement() {
                 </div>
                 <div className="detail-item">
                   <label>Project</label>
-                  <p>{getProjectName(selectedProperty.projectId)}</p>
+                  <p>{selectedProperty.project?.name || getProjectName(selectedProperty.projectId)}</p>
                 </div>
                 <div className="detail-item">
                   <label>Location</label>

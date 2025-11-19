@@ -7,7 +7,8 @@ import {
   Factory, 
   FileText, 
   Headphones,
-  Code
+  Code,
+  Building2
 } from 'lucide-react'
 import './Sidebar.css'
 
@@ -37,6 +38,11 @@ function Sidebar({ isOpen, onClose }) {
       path: '/supplier-management',
       name: 'Supplier Management',
       icon: <Factory size={20} />
+    },
+    {
+      path: '/project-management',
+      name: 'Project Management',
+      icon: <Building2 size={20} />
     },
     {
       path: '/documents',
