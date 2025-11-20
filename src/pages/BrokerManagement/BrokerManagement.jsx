@@ -1,5 +1,38 @@
 import { useState, useMemo, useEffect } from 'react'
 import './BrokerManagement.css'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { MoreHorizontal } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
+
+// API Base URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
 
 function BrokerManagement() {
   const [showBrokerModal, setShowBrokerModal] = useState(false)
@@ -8,6 +41,7 @@ function BrokerManagement() {
   const [showDocumentsModal, setShowDocumentsModal] = useState(false)
   const [showNotificationsModal, setShowNotificationsModal] = useState(false)
   const [showAssignmentModal, setShowAssignmentModal] = useState(false)
+  const [openDropdownId, setOpenDropdownId] = useState(null)
 
   // Form Validation States
   const [formErrors, setFormErrors] = useState({})
@@ -19,11 +53,10 @@ function BrokerManagement() {
   const [sortBy, setSortBy] = useState('Sort By')
   const [notification, setNotification] = useState(null)
 
-  // Brokers State - Load from localStorage
-  const [brokers, setBrokers] = useState(() => {
-    const savedBrokers = localStorage.getItem('legacy-admin-brokers')
-    return savedBrokers ? JSON.parse(savedBrokers) : []
-  })
+  // Brokers State - Load from API
+  const [brokers, setBrokers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   // Store uploaded documents with their file data
   const [brokerDocuments, setBrokerDocuments] = useState(() => {
@@ -31,7 +64,11 @@ function BrokerManagement() {
     return savedDocs ? JSON.parse(savedDocs) : {}
   })
 
-  // Store broker assignments (buyers and suppliers)
+  // Store broker clients from API (actual data from database)
+  const [brokerClients, setBrokerClients] = useState({})
+  const [loadingClients, setLoadingClients] = useState({})
+
+  // Store broker assignments (buyers and suppliers) - kept for backward compatibility
   const [brokerAssignments, setBrokerAssignments] = useState(() => {
     const savedAssignments = localStorage.getItem('legacy-admin-broker-assignments')
     return savedAssignments ? JSON.parse(savedAssignments) : {}
@@ -48,6 +85,23 @@ function BrokerManagement() {
     const savedSuppliers = localStorage.getItem('legacy-admin-suppliers')
     return savedSuppliers ? JSON.parse(savedSuppliers) : []
   })
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (openDropdownId && !event.target.closest('.menu-button-container')) {
+        setOpenDropdownId(null)
+      }
+    }
+
+    if (openDropdownId) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [openDropdownId])
 
   // Listen for changes in User Management and update available buyers
   useEffect(() => {
@@ -87,10 +141,129 @@ function BrokerManagement() {
     }
   }, [availableBuyers, availableSuppliers])
 
-  // Save brokers to localStorage whenever they change
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 3000)
+  }
+
+  // Fetch broker clients from API
+  const fetchBrokerClients = async (brokerId) => {
+    if (!brokerId || loadingClients[brokerId]) return
+    
+    try {
+      setLoadingClients(prev => ({ ...prev, [brokerId]: true }))
+      const token = localStorage.getItem('adminToken')
+      
+      const response = await fetch(`${API_BASE_URL}/brokers/${brokerId}/clients`, {
+        headers: {
+          'Authorization': `Bearer ${token || ''}`
+        }
+      })
+      
+      const data = await response.json()
+      
+      if (data.success && data.data) {
+        setBrokerClients(prev => ({
+          ...prev,
+          [brokerId]: data.data
+        }))
+        
+        // Update broker's client count
+        setBrokers(prevBrokers => 
+          prevBrokers.map(b => 
+            b.id === brokerId 
+              ? { ...b, clientsManaged: data.count || data.data.length }
+              : b
+          )
+        )
+      } else {
+        console.error('Failed to fetch broker clients:', data.error)
+        setBrokerClients(prev => ({
+          ...prev,
+          [brokerId]: []
+        }))
+      }
+    } catch (err) {
+      console.error('Error fetching broker clients:', err)
+      setBrokerClients(prev => ({
+        ...prev,
+        [brokerId]: []
+      }))
+    } finally {
+      setLoadingClients(prev => ({ ...prev, [brokerId]: false }))
+    }
+  }
+
+  // Fetch brokers from API
   useEffect(() => {
-    localStorage.setItem('legacy-admin-brokers', JSON.stringify(brokers))
-  }, [brokers])
+    const fetchBrokers = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await fetch(`${API_BASE_URL}/brokers`)
+        const data = await response.json()
+        
+        if (data.success && data.data) {
+          // Map backend broker data to frontend format
+          const mappedBrokers = await Promise.all(data.data.map(async (broker) => {
+            const brokerId = broker._id || broker.id
+            
+            // Fetch clients count for each broker
+            let clientsCount = 0
+            try {
+              const token = localStorage.getItem('adminToken')
+              const clientsResponse = await fetch(`${API_BASE_URL}/brokers/${brokerId}/clients`, {
+                headers: {
+                  'Authorization': `Bearer ${token || ''}`
+                }
+              })
+              const clientsData = await clientsResponse.json()
+              if (clientsData.success) {
+                clientsCount = clientsData.count || 0
+              }
+            } catch (err) {
+              console.error(`Error fetching clients for broker ${brokerId}:`, err)
+            }
+            
+            return {
+              id: brokerId,
+              name: broker.name || 'N/A',
+              email: broker.email || 'N/A',
+              phone: broker.phone || 'N/A',
+              company: broker.company || '',
+              licenseNumber: broker.licenseNumber || '',
+              status: broker.status || 'Active',
+              commission: broker.commission || 'N/A',
+              performance: broker.performance || 'Good',
+              clientsManaged: clientsCount, // Use actual count from API
+              bidsSubmitted: broker.bidsSubmitted || 0,
+              successfulDeals: broker.successfulDeals || 0,
+              poCount: broker.poCount || 0,
+              joinDate: broker.createdAt 
+                ? new Date(broker.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+              documents: broker.documents || 0,
+              address: broker.address || '',
+              notes: broker.notes || ''
+            }
+          }))
+          
+          setBrokers(mappedBrokers)
+        } else {
+          setError(data.error || 'Failed to fetch brokers')
+          showNotification('Failed to load brokers: ' + (data.error || 'Unknown error'), 'error')
+        }
+      } catch (err) {
+        console.error('Error fetching brokers:', err)
+        setError(err.message)
+        showNotification('Error loading brokers: ' + err.message, 'error')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchBrokers()
+  }, [])
 
   // Save documents to localStorage whenever they change
   useEffect(() => {
@@ -106,11 +279,10 @@ function BrokerManagement() {
   const filteredBrokers = useMemo(() => {
     let filtered = brokers.filter(broker => {
       // Search filter
-      const searchLower = searchQuery.toLowerCase()
-      const matchesSearch = 
-        broker.name.toLowerCase().includes(searchLower) ||
-        broker.email.toLowerCase().includes(searchLower) ||
-        broker.phone.includes(searchQuery)
+      const matchesSearch = searchQuery === '' || 
+        (broker.name && broker.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (broker.email && broker.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (broker.phone && broker.phone.toString().includes(searchQuery))
 
       // Status filter
       const matchesStatus = 
@@ -135,9 +307,18 @@ function BrokerManagement() {
     return filtered
   }, [brokers, searchQuery, filterStatus, filterPerformance, sortBy])
 
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
+
   const handleViewDetails = (broker) => {
     setSelectedBroker(broker)
     setShowDetailsModal(true)
+    // Fetch broker clients when viewing details
+    if (broker.id) {
+      fetchBrokerClients(broker.id)
+    }
   }
 
   const handleEditBroker = (broker) => {
@@ -145,100 +326,32 @@ function BrokerManagement() {
     setShowBrokerModal(true)
   }
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
-  }
-
-  // Validation Functions
-  const validateBrokerForm = (formData, isNewBroker) => {
-    const errors = {}
-    
-    // Name Validation
-    const name = formData.get('name').trim()
-    if (!name) {
-      errors.name = 'Full name is required'
-    } else if (name.length < 3) {
-      errors.name = 'Name must be at least 3 characters long'
-    } else if (!/^[a-zA-Z\s]+$/.test(name)) {
-      errors.name = 'Name can only contain letters and spaces'
-    }
-    
-    // Email Validation
-    const email = formData.get('email').trim()
-    if (!email) {
-      errors.email = 'Email is required'
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = 'Please enter a valid email address'
-    } else {
-      // Check for duplicate email
-      const isDuplicate = brokers.some(b => 
-        b.email.toLowerCase() === email.toLowerCase() && 
-        (!selectedBroker || b.id !== selectedBroker.id)
-      )
-      if (isDuplicate) {
-        errors.email = 'This email is already registered'
-      }
-    }
-    
-    // Phone Validation
-    const phone = formData.get('phone').trim()
-    if (!phone) {
-      errors.phone = 'Phone number is required'
-    } else if (!/^[6-9]\d{9}$/.test(phone)) {
-      errors.phone = 'Please enter a valid 10-digit Indian mobile number'
-    }
-    
-    // Commission Validation (optional field)
-    const commission = formData.get('commission').trim()
-    if (commission && !/^[0-9]+(\.[0-9]{1,2})?%?$/.test(commission)) {
-      errors.commission = 'Please enter a valid commission rate (e.g., 2.5% or 2.5)'
-    }
-    
-    // Password Validation (only for new brokers)
-    if (isNewBroker) {
-      const password = formData.get('password')
-      const confirmPassword = formData.get('confirmPassword')
-      
-      if (!password) {
-        errors.password = 'Password is required'
-      } else if (password.length < 8) {
-        errors.password = 'Password must be at least 8 characters long'
-      } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
-        errors.password = 'Password must contain uppercase, lowercase, and number'
-      }
-      
-      if (!confirmPassword) {
-        errors.confirmPassword = 'Please confirm your password'
-      } else if (password !== confirmPassword) {
-        errors.confirmPassword = 'Passwords do not match'
-      }
-    }
-    
-    return errors
-  }
-
-  const handleSaveBroker = (e) => {
+  const handleSaveBroker = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
     
-    // Validate form
-    const errors = validateBrokerForm(formData, !selectedBroker)
-    
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors)
-      showNotification('Please fix the validation errors', 'error')
-      return
-    }
-    
-    // Clear errors if validation passes
-    setFormErrors({})
-    
+    // Core broker data (matches backend model)
     const brokerData = {
-      id: selectedBroker ? selectedBroker.id : Date.now(),
-      name: formData.get('name').trim(),
-      email: formData.get('email').trim(),
-      phone: formData.get('phone').trim(),
+      name: formData.get('name'),
+      email: formData.get('email'),
+      phone: formData.get('phone'),
+      company: formData.get('company') || '',
+      licenseNumber: formData.get('licenseNumber') || ''
+    }
+
+    // Add password for new brokers
+    if (!selectedBroker) {
+      const password = formData.get('password')
+      const confirmPassword = formData.get('confirmPassword')
+      if (password !== confirmPassword) {
+        showNotification('Passwords do not match!', 'error')
+        return
+      }
+      brokerData.password = password
+    }
+
+    // Additional fields (if backend supports them, otherwise they'll be ignored)
+    const additionalFields = {
       status: formData.get('status'),
       commission: formData.get('commission').trim(),
       performance: formData.get('performance'),
@@ -248,29 +361,95 @@ function BrokerManagement() {
       bidsSubmitted: selectedBroker ? selectedBroker.bidsSubmitted : 0,
       successfulDeals: selectedBroker ? selectedBroker.successfulDeals : 0,
       poCount: selectedBroker ? selectedBroker.poCount : 0,
-      joinDate: selectedBroker ? selectedBroker.joinDate : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       documents: selectedBroker ? selectedBroker.documents : 0
     }
 
-    if (selectedBroker) {
-      // Update existing broker
-      setBrokers(brokers.map(b => b.id === selectedBroker.id ? brokerData : b))
-      showNotification('Broker updated successfully!', 'success')
-    } else {
-      // Add new broker
-      setBrokers([...brokers, brokerData])
-      showNotification('Broker created successfully!', 'success')
-    }
+    // Merge all fields
+    const fullBrokerData = { ...brokerData, ...additionalFields }
 
-    setShowBrokerModal(false)
-    setSelectedBroker(null)
-    setFormErrors({})
+    try {
+      let response
+      if (selectedBroker) {
+        // Update existing broker
+        response = await fetch(`${API_BASE_URL}/brokers/${selectedBroker.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(fullBrokerData)
+        })
+      } else {
+        // Create new broker
+        response = await fetch(`${API_BASE_URL}/brokers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(fullBrokerData)
+        })
+      }
+
+      const data = await response.json()
+      
+      if (data.success) {
+        showNotification(selectedBroker ? 'Broker updated successfully!' : 'Broker created successfully!', 'success')
+        setShowBrokerModal(false)
+        setSelectedBroker(null)
+        
+        // Refresh brokers list
+        const fetchResponse = await fetch(`${API_BASE_URL}/brokers`)
+        const fetchData = await fetchResponse.json()
+        if (fetchData.success && fetchData.data) {
+          const mappedBrokers = fetchData.data.map(broker => ({
+            id: broker._id || broker.id,
+            name: broker.name || 'N/A',
+            email: broker.email || 'N/A',
+            phone: broker.phone || 'N/A',
+            company: broker.company || '',
+            licenseNumber: broker.licenseNumber || '',
+            status: broker.status || 'Active',
+            commission: broker.commission || 'N/A',
+            performance: broker.performance || 'Good',
+            clientsManaged: broker.clientsManaged || 0,
+            bidsSubmitted: broker.bidsSubmitted || 0,
+            successfulDeals: broker.successfulDeals || 0,
+            poCount: broker.poCount || 0,
+            joinDate: broker.createdAt 
+              ? new Date(broker.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+              : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            documents: broker.documents || 0,
+            address: broker.address || '',
+            notes: broker.notes || ''
+          }))
+          setBrokers(mappedBrokers)
+        }
+      } else {
+        showNotification('Error: ' + (data.error || 'Failed to save broker'), 'error')
+      }
+    } catch (err) {
+      console.error('Error saving broker:', err)
+      showNotification('Error saving broker: ' + err.message, 'error')
+    }
   }
 
-  const handleDeleteBroker = (brokerId) => {
+  const handleDeleteBroker = async (brokerId) => {
     if (window.confirm('Are you sure you want to delete this broker?')) {
-      setBrokers(brokers.filter(b => b.id !== brokerId))
-      showNotification('Broker deleted successfully!', 'success')
+      try {
+        const response = await fetch(`${API_BASE_URL}/brokers/${brokerId}`, {
+          method: 'DELETE'
+        })
+        const data = await response.json()
+        
+        if (data.success) {
+          setBrokers(brokers.filter(b => b.id !== brokerId))
+          showNotification('Broker deleted successfully!', 'success')
+        } else {
+          showNotification('Error: ' + (data.error || 'Failed to delete broker'), 'error')
+        }
+      } catch (err) {
+        console.error('Error deleting broker:', err)
+        showNotification('Error deleting broker: ' + err.message, 'error')
+      }
     }
   }
 
@@ -302,18 +481,36 @@ function BrokerManagement() {
     }
   }
 
-  const handleToggleStatus = (brokerId, currentStatus) => {
+  const handleToggleStatus = async (brokerId, currentStatus) => {
     const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active'
     const action = newStatus === 'Active' ? 'activate' : 'deactivate'
     const broker = brokers.find(b => b.id === brokerId)
     
     if (window.confirm(`Are you sure you want to ${action} ${broker.name}'s account?`)) {
-      setBrokers(brokers.map(b => 
-        b.id === brokerId 
-          ? { ...b, status: newStatus }
-          : b
-      ))
-      showNotification(`Broker account ${action}d successfully!`, 'success')
+      try {
+        const response = await fetch(`${API_BASE_URL}/brokers/${brokerId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: newStatus })
+        })
+        const data = await response.json()
+        
+        if (data.success) {
+          setBrokers(brokers.map(b => 
+            b.id === brokerId 
+              ? { ...b, status: newStatus }
+              : b
+          ))
+          showNotification(`Broker account ${action}d successfully!`, 'success')
+        } else {
+          showNotification('Error: ' + (data.error || 'Failed to update status'), 'error')
+        }
+      } catch (err) {
+        console.error('Error updating status:', err)
+        showNotification('Error updating status: ' + err.message, 'error')
+      }
     }
   }
 
@@ -426,6 +623,24 @@ function BrokerManagement() {
   }
 
   const getAssignedBuyers = (brokerId) => {
+    // First try to get from API (actual data)
+    if (brokerClients[brokerId] && brokerClients[brokerId].length > 0) {
+      return brokerClients[brokerId].map(client => ({
+        id: client._id,
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        properties: client.properties || [],
+        project: client.properties && client.properties.length > 0 
+          ? client.properties.map(p => `${p.flatNo} - ${p.buildingName}`).join(', ')
+          : 'N/A',
+        property: client.properties && client.properties.length > 0
+          ? client.properties.map(p => `${p.flatNo} - ${p.buildingName}`).join(', ')
+          : 'N/A'
+      }))
+    }
+    
+    // Fallback to localStorage (for backward compatibility)
     const assignments = brokerAssignments[brokerId]
     if (!assignments || !assignments.buyers) return []
     // Filter buyers that still exist in the system
@@ -563,6 +778,178 @@ Date: ${new Date().toLocaleString()}`
     }
   }
 
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Broker Details" />
+      ),
+      cell: ({ row }) => {
+        const broker = row.original
+        return (
+          <div className="broker-cell-bm">
+            <div className="broker-avatar-bm">
+              {broker.name ? broker.name.charAt(0).toUpperCase() : '?'}
+            </div>
+            <div>
+              <div className="broker-name-bm">{broker.name || 'N/A'}</div>
+              <div className="broker-meta">Joined: {broker.joinDate || 'N/A'}</div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "email",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Contact" />
+      ),
+      cell: ({ row }) => {
+        const broker = row.original
+        return (
+          <div className="contact-info-bm">
+            <div>{broker.email || 'N/A'}</div>
+            <div className="broker-meta">{broker.phone || 'N/A'}</div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const broker = row.original
+        return (
+          <span className={`status-badge ${broker.status === 'Active' ? 'status-success' : 'status-error'}`}>
+            {broker.status || 'Inactive'}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: "clientsManaged",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Clients" />
+      ),
+      cell: ({ row }) => (
+        <span className="metric-value">{row.original.clientsManaged || 0}</span>
+      ),
+    },
+    {
+      id: "bidsDeals",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Bids / Deals" />
+      ),
+      cell: ({ row }) => {
+        const broker = row.original
+        return (
+          <div className="bids-deals">
+            <span className="metric-value">{broker.bidsSubmitted || 0}</span>
+            <span className="separator">/</span>
+            <span className="metric-value success">{broker.successfulDeals || 0}</span>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "poCount",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="PO Count" />
+      ),
+      cell: ({ row }) => (
+        <span className="metric-value">{row.original.poCount || 0}</span>
+      ),
+    },
+    {
+      accessorKey: "commission",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Commission" />
+      ),
+      cell: ({ row }) => (
+        <span className="commission-badge">{row.original.commission || 'N/A'}</span>
+      ),
+    },
+    {
+      accessorKey: "performance",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Performance" />
+      ),
+      cell: ({ row }) => {
+        const broker = row.original
+        return (
+          <span className={`performance-badge ${getPerformanceColor(broker.performance || 'Average')}`}>
+            {broker.performance || 'Average'}
+          </span>
+        )
+      },
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const broker = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(broker)}>
+                View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditBroker(broker)}>
+                Edit Broker
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageAssignments(broker)}>
+                Assign Buyers/Suppliers
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleToggleStatus(broker.id, broker.status)}>
+                {broker.status === 'Active' ? 'Deactivate' : 'Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageDocuments(broker)}>
+                Manage Documents
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageNotifications(broker)}>
+                Send Notification
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleResetPassword(broker)}>
+                Reset Password
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleDeleteBroker(broker.id)}>
+                Delete Broker
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: filteredBrokers,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
+
   return (
     <div className="broker-management-page">
       <div className="page-header">
@@ -659,138 +1046,82 @@ Date: ${new Date().toLocaleString()}`
 
       {/* Brokers Table */}
       <div className="card brokers-table-card">
-        <table className="brokers-table-bm">
-          <thead>
-            <tr>
-              <th>Broker Details</th>
-              <th>Contact</th>
-              <th>Status</th>
-              <th>Clients</th>
-              <th>Bids / Deals</th>
-              <th>PO Count</th>
-              <th>Commission</th>
-              <th>Performance</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredBrokers.length === 0 ? (
-              <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  {brokers.length === 0 ? 'No brokers yet. Click "Create New Broker" to add your first broker.' : 'No brokers found matching your criteria'}
-                </td>
-              </tr>
-            ) : (
-              filteredBrokers.map((broker) => (
-              <tr key={broker.id}>
-                <td>
-                  <div className="broker-cell-bm">
-                    <div className="broker-avatar-bm">
-                      {broker.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="broker-name-bm">{broker.name}</div>
-                      <div className="broker-meta">Joined: {broker.joinDate}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <div className="contact-info-bm">
-                    <div>{broker.email}</div>
-                    <div className="broker-meta">{broker.phone}</div>
-                  </div>
-                </td>
-                <td>
-                  <span className={`status-badge ${broker.status === 'Active' ? 'status-success' : 'status-error'}`}>
-                    {broker.status}
-                  </span>
-                </td>
-                <td>
-                  <span className="metric-value">{broker.clientsManaged}</span>
-                </td>
-                <td>
-                  <div className="bids-deals">
-                    <span className="metric-value">{broker.bidsSubmitted}</span>
-                    <span className="separator">/</span>
-                    <span className="metric-value success">{broker.successfulDeals}</span>
-                  </div>
-                </td>
-                <td>
-                  <span className="metric-value">{broker.poCount}</span>
-                </td>
-                <td>
-                  <span className="commission-badge">{broker.commission}</span>
-                </td>
-                <td>
-                  <span className={`performance-badge ${getPerformanceColor(broker.performance)}`}>
-                    {broker.performance}
-                  </span>
-                </td>
-                <td>
-                  <div className="action-buttons-bm">
-                    <button 
-                      className="action-btn-bm" 
-                      title="View Details"
-                      onClick={() => handleViewDetails(broker)}
-                    >
-                      👁️
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Edit Broker"
-                      onClick={() => handleEditBroker(broker)}
-                    >
-                      ✏️
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Assign Buyers/Suppliers"
-                      onClick={() => handleManageAssignments(broker)}
-                    >
-                      👥
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Toggle Status"
-                      onClick={() => handleToggleStatus(broker.id, broker.status)}
-                    >
-                      {broker.status === 'Active' ? '⏸️' : '▶️'}
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Manage Documents"
-                      onClick={() => handleManageDocuments(broker)}
-                    >
-                      📄
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Send Notification"
-                      onClick={() => handleManageNotifications(broker)}
-                    >
-                      🔔
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Reset Password"
-                      onClick={() => handleResetPassword(broker)}
-                    >
-                      🔑
-                    </button>
-                    <button 
-                      className="action-btn-bm" 
-                      title="Delete Broker"
-                      onClick={() => handleDeleteBroker(broker.id)}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+            Loading brokers...
+          </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--error)' }}>
+            Error: {error}
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center py-4">
+              <Input
+                placeholder="Filter by broker name..."
+                value={(table.getColumn("name")?.getFilterValue() ?? "")}
+                onChange={(event) =>
+                  table.getColumn("name")?.setFilterValue(event.target.value)
+                }
+                className="max-w-sm"
+              />
+              <DataTableViewOptions table={table} />
+            </div>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => {
+                        return (
+                          <TableHead key={header.id}>
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(
+                                  header.column.columnDef.header,
+                                  header.getContext()
+                                )}
+                          </TableHead>
+                        )
+                      })}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        data-state={row.getIsSelected() && "selected"}
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell key={cell.id}>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={columns.length}
+                        className="h-24 text-center"
+                      >
+                        {brokers.length === 0 ? 'No brokers yet. Click "Create New Broker" to add your first broker.' : 'No brokers found matching your criteria'}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="py-4">
+              <DataTablePagination table={table} />
+            </div>
+          </>
+        )}
 
         {/* Mobile Card View */}
         {filteredBrokers.length === 0 ? (
@@ -974,18 +1305,43 @@ Date: ${new Date().toLocaleString()}`
 
               {/* Assignments Section */}
               <div className="details-section">
-                <h4>Assigned Buyers ({getAssignedBuyers(selectedBroker.id).length})</h4>
-                {getAssignedBuyers(selectedBroker.id).length > 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4>Assigned Clients ({getAssignedBuyers(selectedBroker.id).length})</h4>
+                  <button 
+                    className="btn btn-outline"
+                    onClick={() => fetchBrokerClients(selectedBroker.id)}
+                    disabled={loadingClients[selectedBroker.id]}
+                    style={{ fontSize: '12px', padding: '4px 8px' }}
+                  >
+                    {loadingClients[selectedBroker.id] ? 'Loading...' : '🔄 Refresh'}
+                  </button>
+                </div>
+                {loadingClients[selectedBroker.id] ? (
+                  <p className="no-assignments">Loading clients...</p>
+                ) : getAssignedBuyers(selectedBroker.id).length > 0 ? (
                   <div className="assignments-list">
                     {getAssignedBuyers(selectedBroker.id).map(buyer => (
-                      <div key={buyer.id} className="assignment-item">
-                        <span>👤 {buyer.name}</span>
-                        <span className="assignment-meta">{buyer.project} - {buyer.property}</span>
+                      <div key={buyer.id} className="assignment-item" style={{ marginBottom: '12px', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '4px' }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>👤 {buyer.name}</div>
+                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>📧 {buyer.email}</div>
+                        {buyer.phone && (
+                          <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>📞 {buyer.phone}</div>
+                        )}
+                        {buyer.properties && buyer.properties.length > 0 && (
+                          <div style={{ marginTop: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Properties ({buyer.properties.length}):</div>
+                            {buyer.properties.map((prop, idx) => (
+                              <div key={idx} style={{ fontSize: '11px', color: '#888', marginLeft: '12px', marginBottom: '2px' }}>
+                                • {prop.flatNo} - {prop.buildingName}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="no-assignments">No buyers assigned yet</p>
+                  <p className="no-assignments">No clients assigned yet</p>
                 )}
               </div>
 
@@ -1148,6 +1504,27 @@ Date: ${new Date().toLocaleString()}`
                       <option>Active</option>
                       <option>Inactive</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Company</label>
+                    <input 
+                      type="text"
+                      name="company" 
+                      placeholder="Enter company name" 
+                      defaultValue={selectedBroker?.company}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>License Number</label>
+                    <input 
+                      type="text"
+                      name="licenseNumber" 
+                      placeholder="Enter license number" 
+                      defaultValue={selectedBroker?.licenseNumber}
+                    />
                   </div>
                 </div>
 
