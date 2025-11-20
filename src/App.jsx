@@ -7,6 +7,8 @@ import UserManagement from './pages/UserManagement/UserManagement'
 import BrokerManagement from './pages/BrokerManagement/BrokerManagement'
 import SupplierManagement from './pages/SupplierManagement/SupplierManagement'
 import PropertyManagement from './pages/PropertyManagement/PropertyManagement'
+import ProductManagement from './pages/ProductManagement/ProductManagement'
+import OrderManagement from './pages/OrderManagement/OrderManagement'
 import Documents from './pages/Documents/Documents'
 import Support from './pages/Support/Support'
 import AppApiTest from './pages/AppApiTest/AppApiTest'
@@ -91,6 +93,8 @@ function App() {
           <Route path="property-management" element={<PropertyManagement />} />
           <Route path="broker-management" element={<BrokerManagement />} />
           <Route path="supplier-management" element={<SupplierManagement />} />
+          <Route path="product-management" element={<ProductManagement />} />
+          <Route path="order-management" element={<OrderManagement />} />
           <Route path="documents" element={<Documents />} />
           <Route path="support" element={<Support />} />
           <Route path="project-management" element={<ProjectManagement />} />
