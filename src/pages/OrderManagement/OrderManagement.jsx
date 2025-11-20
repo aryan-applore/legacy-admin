@@ -1,0 +1,741 @@
+import { useState, useMemo, useEffect } from 'react'
+import './OrderManagement.css'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { MoreHorizontal, ShoppingCart, Plus, Edit, Trash2, Truck, Eye } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
+import { useApiFetch, useNotification, API_BASE_URL } from '../../lib/apiHelpers'
+
+function OrderManagement() {
+  const [orders, setOrders] = useState([])
+  const [suppliers, setSuppliers] = useState([])
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false)
+  const [notification, showNotification] = useNotification()
+  const { fetchData } = useApiFetch()
+
+  // Search and Filter States
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterSupplier, setFilterSupplier] = useState('All Suppliers')
+  const [filterStatus, setFilterStatus] = useState('All Status')
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState('All Payment Status')
+
+  // Table state
+  const [sorting, setSorting] = useState([])
+  const [columnFilters, setColumnFilters] = useState([])
+  const [columnVisibility, setColumnVisibility] = useState({})
+
+  // Load orders, suppliers, and products
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true)
+      try {
+        const [ordersRes, suppliersRes, productsRes] = await Promise.all([
+          fetchData('/supplier-orders'),
+          fetchData('/suppliers'),
+          fetchData('/products')
+        ])
+        if (ordersRes.success) {
+          setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+        }
+        if (suppliersRes.success) {
+          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+        }
+        if (productsRes.success) {
+          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+        }
+      } catch (error) {
+        setError('Failed to load data')
+        showNotification('Failed to load data', 'error')
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  // Filtered orders
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      const searchLower = searchQuery.toLowerCase()
+      const matchesSearch = 
+        order.orderNumber?.toLowerCase().includes(searchLower) ||
+        order.notes?.toLowerCase().includes(searchLower)
+
+      const supplierId = order.supplierId?._id || order.supplierId
+      const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+      const supplierName = supplier?.company || supplier?.name || 'N/A'
+      const matchesSupplier = 
+        filterSupplier === 'All Suppliers' || supplierName === filterSupplier
+
+      const matchesStatus = 
+        filterStatus === 'All Status' || order.status === filterStatus.toLowerCase().replace(' ', '_')
+
+      const matchesPaymentStatus = 
+        filterPaymentStatus === 'All Payment Status' || order.paymentStatus === filterPaymentStatus.toLowerCase()
+
+      return matchesSearch && matchesSupplier && matchesStatus && matchesPaymentStatus
+    })
+  }, [orders, searchQuery, filterSupplier, filterStatus, filterPaymentStatus, suppliers])
+
+  // Handlers
+  const handleAddOrder = () => {
+    setSelectedOrder(null)
+    setShowAddModal(true)
+  }
+
+  const handleEditOrder = (order) => {
+    setSelectedOrder(order)
+    setShowEditModal(true)
+  }
+
+  const handleViewDetails = (order) => {
+    setSelectedOrder(order)
+    setShowDetailsModal(true)
+  }
+
+  const handleUpdateDelivery = (order) => {
+    setSelectedOrder(order)
+    setShowDeliveryModal(true)
+  }
+
+  const handleSaveOrder = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    let items = []
+    try {
+      items = JSON.parse(formData.get('items') || '[]')
+    } catch (err) {
+      showNotification('Invalid items JSON format', 'error')
+      return
+    }
+    
+    const orderData = {
+      supplierId: formData.get('supplierId'),
+      status: formData.get('status') || 'pending',
+      expectedDelivery: formData.get('expectedDelivery') || undefined,
+      items: items,
+      paymentStatus: formData.get('paymentStatus') || 'pending',
+      notes: formData.get('notes')
+    }
+
+    const endpoint = selectedOrder ? `/supplier-orders/${selectedOrder._id || selectedOrder.id}` : '/supplier-orders'
+    const method = selectedOrder ? 'PUT' : 'POST'
+    
+    const result = await fetchData(endpoint, {
+      method,
+      body: JSON.stringify(orderData)
+    })
+    
+    if (result.success) {
+      showNotification(selectedOrder ? 'Order updated successfully!' : 'Order created successfully!', 'success')
+      const ordersRes = await fetchData('/supplier-orders')
+      if (ordersRes.success) {
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      }
+      setShowAddModal(false)
+      setShowEditModal(false)
+      setSelectedOrder(null)
+    } else {
+      showNotification(result.error || 'Failed to save order', 'error')
+    }
+  }
+
+  const handleDeleteOrder = async (orderId) => {
+    if (window.confirm('Are you sure you want to delete this order?')) {
+      const result = await fetchData(`/supplier-orders/${orderId}`, { method: 'DELETE' })
+      if (result.success) {
+        showNotification('Order deleted successfully!', 'success')
+        const ordersRes = await fetchData('/supplier-orders')
+        if (ordersRes.success) {
+          setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+        }
+      } else {
+        showNotification(result.error || 'Failed to delete order', 'error')
+      }
+    }
+  }
+
+  const handleUpdateOrderStatus = async (orderId, status, cancellationReason) => {
+    const result = await fetchData(`/supplier-orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, cancellationReason })
+    })
+    
+    if (result.success) {
+      showNotification('Order status updated successfully!', 'success')
+      const ordersRes = await fetchData('/supplier-orders')
+      if (ordersRes.success) {
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      }
+    } else {
+      showNotification(result.error || 'Failed to update order status', 'error')
+    }
+  }
+
+  const handleSaveDeliveryUpdate = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const receivedQuantities = {}
+    
+    const itemInputs = formData.getAll('receivedQuantity')
+    const itemIds = formData.getAll('itemId')
+    itemIds.forEach((id, index) => {
+      receivedQuantities[id] = parseInt(itemInputs[index]) || 0
+    })
+
+    const result = await fetchData(`/supplier-orders/${selectedOrder._id || selectedOrder.id}/delivery`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        actualDelivery: formData.get('actualDelivery') || undefined,
+        receivedQuantities
+      })
+    })
+    
+    if (result.success) {
+      showNotification('Delivery updated successfully!', 'success')
+      const ordersRes = await fetchData('/supplier-orders')
+      if (ordersRes.success) {
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      }
+      setShowDeliveryModal(false)
+      setSelectedOrder(null)
+    } else {
+      showNotification(result.error || 'Failed to update delivery', 'error')
+    }
+  }
+
+  // Define columns
+  const columns = useMemo(() => [
+    {
+      accessorKey: "orderNumber",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Order" />
+      ),
+      cell: ({ row }) => {
+        const order = row.original
+        const supplierId = order.supplierId?._id || order.supplierId
+        const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+        return (
+          <div className="order-cell">
+            <div className="order-icon">
+              <ShoppingCart size={20} />
+            </div>
+            <div>
+              <div className="order-name">{order.orderNumber}</div>
+              <div className="order-meta">{supplier?.company || supplier?.name || 'N/A'}</div>
+              <div className="order-meta">{new Date(order.createdAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        const statusMap = {
+          pending: { label: 'Pending', class: 'status-info' },
+          confirmed: { label: 'Confirmed', class: 'status-info' },
+          in_transit: { label: 'In Transit', class: 'status-info' },
+          delivered: { label: 'Delivered', class: 'status-success' },
+          cancelled: { label: 'Cancelled', class: 'status-error' }
+        }
+        const statusInfo = statusMap[status] || { label: status, class: 'status-info' }
+        return (
+          <span className={`status-badge ${statusInfo.class}`}>
+            {statusInfo.label}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: "totalAmount",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Total Amount" />
+      ),
+      cell: ({ row }) => `₹${(row.original.totalAmount || 0).toLocaleString()}`,
+    },
+    {
+      accessorKey: "items",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Items" />
+      ),
+      cell: ({ row }) => `${row.original.items?.length || 0} items`,
+    },
+    {
+      accessorKey: "paymentStatus",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Payment" />
+      ),
+      cell: ({ row }) => {
+        const paymentStatus = row.original.paymentStatus
+        const paymentMap = {
+          pending: { label: 'Pending', class: 'status-info' },
+          partial: { label: 'Partial', class: 'status-warning' },
+          paid: { label: 'Paid', class: 'status-success' },
+          overdue: { label: 'Overdue', class: 'status-error' }
+        }
+        const paymentInfo = paymentMap[paymentStatus] || { label: paymentStatus, class: 'status-info' }
+        return (
+          <span className={`status-badge ${paymentInfo.class}`}>
+            {paymentInfo.label}
+          </span>
+        )
+      },
+    },
+    {
+      id: "actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const order = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Open menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => handleViewDetails(order)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleEditOrder(order)}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleUpdateDelivery(order)}>
+                <Truck className="mr-2 h-4 w-4" />
+                Update Delivery
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => handleDeleteOrder(order._id || order.id)}
+                className="text-red-600"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [suppliers])
+
+  const table = useReactTable({
+    data: filteredOrders,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+    },
+  })
+
+  // Stats
+  const stats = useMemo(() => {
+    const total = orders.length
+    const pending = orders.filter(o => o.status === 'pending').length
+    const delivered = orders.filter(o => o.status === 'delivered').length
+    const totalAmount = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+    return { total, pending, delivered, totalAmount }
+  }, [orders])
+
+  if (loading) {
+    return <div className="loading-state">Loading orders...</div>
+  }
+
+  return (
+    <div className="order-management-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title-main">Order Management</h1>
+          <p className="page-subtitle">Manage purchase orders and track deliveries</p>
+        </div>
+        <Button onClick={handleAddOrder}>
+          <Plus className="mr-2 h-4 w-4" />
+          Create Order
+        </Button>
+      </div>
+
+      {/* Stats */}
+      <div className="order-stats-grid">
+        <div className="stat-card-pm">
+          <div className="stat-icon-pm">🛒</div>
+          <div>
+            <h3>Total Orders</h3>
+            <p className="stat-value-pm">{stats.total}</p>
+          </div>
+        </div>
+        <div className="stat-card-pm">
+          <div className="stat-icon-pm">⏳</div>
+          <div>
+            <h3>Pending</h3>
+            <p className="stat-value-pm">{stats.pending}</p>
+          </div>
+        </div>
+        <div className="stat-card-pm">
+          <div className="stat-icon-pm">✅</div>
+          <div>
+            <h3>Delivered</h3>
+            <p className="stat-value-pm" style={{ color: 'var(--success)' }}>{stats.delivered}</p>
+          </div>
+        </div>
+        <div className="stat-card-pm">
+          <div className="stat-icon-pm">💰</div>
+          <div>
+            <h3>Total Value</h3>
+            <p className="stat-value-pm">₹{stats.totalAmount.toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="card filters-section">
+        <div className="filters-grid">
+          <Input
+            placeholder="Search by order number, notes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="search-input-full"
+          />
+          <select 
+            className="filter-select"
+            value={filterSupplier}
+            onChange={(e) => setFilterSupplier(e.target.value)}
+          >
+            <option>All Suppliers</option>
+            {suppliers.map((s) => (
+              <option key={s._id || s.id}>{s.company || s.name}</option>
+            ))}
+          </select>
+          <select 
+            className="filter-select"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option>All Status</option>
+            <option>Pending</option>
+            <option>Confirmed</option>
+            <option>In Transit</option>
+            <option>Delivered</option>
+            <option>Cancelled</option>
+          </select>
+          <select 
+            className="filter-select"
+            value={filterPaymentStatus}
+            onChange={(e) => setFilterPaymentStatus(e.target.value)}
+          >
+            <option>All Payment Status</option>
+            <option>Pending</option>
+            <option>Partial</option>
+            <option>Paid</option>
+            <option>Overdue</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Orders Table */}
+      <div className="card orders-table-card">
+        <div className="flex items-center py-4">
+          <Input
+            placeholder="Filter by order number..."
+            value={(table.getColumn("orderNumber")?.getFilterValue() ?? "")}
+            onChange={(event) =>
+              table.getColumn("orderNumber")?.setFilterValue(event.target.value)
+            }
+            className="max-w-sm"
+          />
+          <DataTableViewOptions table={table} />
+        </div>
+        <div className="overflow-hidden rounded-md border">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center">
+                    No orders found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="py-4">
+          <DataTablePagination table={table} />
+        </div>
+      </div>
+
+      {/* Add/Edit Order Modal */}
+      {(showAddModal || showEditModal) && (
+        <div className="modal-overlay" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedOrder(null); }}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{selectedOrder ? 'Edit Order' : 'Create Purchase Order'}</h2>
+              <button className="close-btn" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedOrder(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveOrder}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Supplier *</label>
+                    <select name="supplierId" required defaultValue={selectedOrder?.supplierId?._id || selectedOrder?.supplierId}>
+                      <option value="">Select Supplier</option>
+                      {suppliers.map((s) => (
+                        <option key={s._id || s.id} value={s._id || s.id}>{s.company || s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Status</label>
+                    <select name="status" defaultValue={selectedOrder?.status || 'pending'}>
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="in_transit">In Transit</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Expected Delivery</label>
+                    <input type="date" name="expectedDelivery" defaultValue={selectedOrder?.expectedDelivery ? new Date(selectedOrder.expectedDelivery).toISOString().split('T')[0] : ''} />
+                  </div>
+                  <div className="form-group">
+                    <label>Payment Status</label>
+                    <select name="paymentStatus" defaultValue={selectedOrder?.paymentStatus || 'pending'}>
+                      <option value="pending">Pending</option>
+                      <option value="partial">Partial</option>
+                      <option value="paid">Paid</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Items (JSON Array) *</label>
+                  <textarea 
+                    name="items" 
+                    rows="10" 
+                    required
+                    defaultValue={selectedOrder?.items ? JSON.stringify(selectedOrder.items.map(item => ({
+                      productId: item.productId?._id || item.productId,
+                      quantity: item.quantity,
+                      unitPrice: item.unitPrice,
+                      receivedQuantity: item.receivedQuantity || 0,
+                      notes: item.notes || ''
+                    })), null, 2) : '[]'}
+                    placeholder='[{"productId": "product_id_here", "quantity": 100, "unitPrice": 25.50, "receivedQuantity": 0, "notes": ""}]'
+                  ></textarea>
+                  <small>Format: Array of objects with productId, quantity, unitPrice, receivedQuantity (optional), notes (optional)</small>
+                </div>
+                <div className="form-group">
+                  <label>Notes</label>
+                  <textarea name="notes" rows="3" defaultValue={selectedOrder?.notes}></textarea>
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedOrder(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save Order</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Details Modal */}
+      {showDetailsModal && selectedOrder && (
+        <div className="modal-overlay" onClick={() => { setShowDetailsModal(false); setSelectedOrder(null); }}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Order Details - {selectedOrder.orderNumber}</h2>
+              <button className="close-btn" onClick={() => { setShowDetailsModal(false); setSelectedOrder(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="details-grid">
+                <div className="detail-item">
+                  <label>Order Number</label>
+                  <p>{selectedOrder.orderNumber}</p>
+                </div>
+                <div className="detail-item">
+                  <label>Status</label>
+                  <p>{selectedOrder.status}</p>
+                </div>
+                <div className="detail-item">
+                  <label>Total Amount</label>
+                  <p>₹{selectedOrder.totalAmount?.toLocaleString() || '0'}</p>
+                </div>
+                <div className="detail-item">
+                  <label>Payment Status</label>
+                  <p>{selectedOrder.paymentStatus}</p>
+                </div>
+                <div className="detail-item">
+                  <label>Expected Delivery</label>
+                  <p>{selectedOrder.expectedDelivery ? new Date(selectedOrder.expectedDelivery).toLocaleDateString() : 'N/A'}</p>
+                </div>
+                <div className="detail-item">
+                  <label>Actual Delivery</label>
+                  <p>{selectedOrder.actualDelivery ? new Date(selectedOrder.actualDelivery).toLocaleDateString() : 'N/A'}</p>
+                </div>
+              </div>
+              <h3 className="section-title">Items</h3>
+              <div className="items-list">
+                {selectedOrder.items?.map((item, index) => {
+                  const product = products.find(p => (p._id || p.id) === (item.productId?._id || item.productId))
+                  return (
+                    <div key={index} className="item-row">
+                      <div>{product?.name || 'Product'}</div>
+                      <div>Qty: {item.quantity} | Received: {item.receivedQuantity || 0}</div>
+                      <div>Price: ₹{item.unitPrice} | Total: ₹{(item.quantity * item.unitPrice).toLocaleString()}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="modal-actions">
+                <button className="btn btn-primary" onClick={() => { setShowDetailsModal(false); setSelectedOrder(null); }}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Update Modal */}
+      {showDeliveryModal && selectedOrder && (
+        <div className="modal-overlay" onClick={() => { setShowDeliveryModal(false); setSelectedOrder(null); }}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Update Delivery - {selectedOrder.orderNumber}</h2>
+              <button className="close-btn" onClick={() => { setShowDeliveryModal(false); setSelectedOrder(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveDeliveryUpdate}>
+                <div className="form-group">
+                  <label>Actual Delivery Date</label>
+                  <input 
+                    type="date" 
+                    name="actualDelivery" 
+                    defaultValue={selectedOrder?.actualDelivery ? new Date(selectedOrder.actualDelivery).toISOString().split('T')[0] : ''} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Received Quantities</label>
+                  {selectedOrder.items?.map((item, index) => {
+                    const product = products.find(p => (p._id || p.id) === (item.productId?._id || item.productId))
+                    return (
+                      <div key={index} style={{ marginBottom: '15px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                        <input type="hidden" name="itemId" value={item._id || item.id} />
+                        <div style={{ marginBottom: '8px' }}>
+                          <strong>{product?.name || 'Product'}</strong> - Ordered: {item.quantity}
+                        </div>
+                        <input 
+                          type="number" 
+                          name="receivedQuantity" 
+                          min="0" 
+                          max={item.quantity}
+                          defaultValue={item.receivedQuantity || 0}
+                          placeholder="Received quantity"
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowDeliveryModal(false); setSelectedOrder(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Update Delivery</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`notification-toast ${notification.type}`}>
+          {notification.message}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default OrderManagement
+

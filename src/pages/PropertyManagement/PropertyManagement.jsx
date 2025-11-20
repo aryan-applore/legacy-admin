@@ -2,14 +2,12 @@ import { useState, useMemo, useEffect } from 'react'
 import './PropertyManagement.css'
 import { 
   Home, 
-  CheckCircle, 
   XCircle, 
   DollarSign, 
   Search,
   Eye,
   Edit,
   Trash2,
-  Building,
   User,
   MapPin,
   Plus,
@@ -44,7 +42,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
-import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 // API Base URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
@@ -65,6 +62,13 @@ function PropertyManagement() {
   const [loadingProgress, setLoadingProgress] = useState(false)
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [savingProperty, setSavingProperty] = useState(false)
+  const [showInstalmentsModal, setShowInstalmentsModal] = useState(false)
+  const [instalmentsData, setInstalmentsData] = useState(null)
+  const [loadingInstalments, setLoadingInstalments] = useState(false)
+  const [editingInstalment, setEditingInstalment] = useState(null)
+  const [newInstalment, setNewInstalment] = useState({ number: '', dueDate: '', amount: '' })
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
+  const [generateData, setGenerateData] = useState({ count: 5, startDate: '', intervalDays: 30 })
   
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -72,7 +76,7 @@ function PropertyManagement() {
   const [filterStatus, setFilterStatus] = useState('All Status')
   const [notification, setNotification] = useState(null)
 
-  // Projects list for filter
+  // Projects list for filter (extracted from properties)
   const [projects, setProjects] = useState([])
 
   // Helper function to format location as string
@@ -87,10 +91,11 @@ function PropertyManagement() {
     return 'N/A'
   }
 
-  // Helper function to get project name from projectId
-  const getProjectName = (projectId) => {
-    if (!projectId) return 'N/A'
-    const project = projects.find(p => p.id === projectId || p._id === projectId)
+  // Helper function to get project name from property
+  const getProjectName = (property) => {
+    if (property.project?.name) return property.project.name
+    if (!property.projectId) return 'N/A'
+    const project = projects.find(p => p.id === property.projectId || p._id === property.projectId)
     return project?.name || 'N/A'
   }
 
@@ -113,21 +118,23 @@ function PropertyManagement() {
     }
   }
 
-  // Fetch projects for filter
+  // Extract unique projects from properties list for filter
   useEffect(() => {
-    const fetchProjects = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/projects`)
-        const data = await response.json()
-        if (data.success) {
-          setProjects(data.data || [])
+    if (properties.length > 0) {
+      const projectMap = new Map()
+      properties.forEach(property => {
+        if (property.project && property.project.id) {
+          if (!projectMap.has(property.project.id)) {
+            projectMap.set(property.project.id, {
+              id: property.project.id,
+              name: property.project.name
+            })
+          }
         }
-      } catch (err) {
-        console.error('Error fetching projects:', err)
-      }
+      })
+      setProjects(Array.from(projectMap.values()))
     }
-    fetchProjects()
-  }, [])
+  }, [properties])
 
   // Fetch properties from API
   useEffect(() => {
@@ -139,7 +146,8 @@ function PropertyManagement() {
         const data = await response.json()
         
         if (data.success && data.data) {
-          setProperties(data.data.properties || [])
+          const propertiesList = data.data.properties || []
+          setProperties(propertiesList)
         } else {
           setError('Failed to fetch properties')
           setProperties([])
@@ -162,7 +170,7 @@ function PropertyManagement() {
       // Search filter
       const searchLower = searchQuery.toLowerCase()
       const locationStr = formatLocation(property.location)
-      const projectName = property.project?.name || getProjectName(property.projectId)
+      const projectName = property.project?.name || getProjectName(property)
       const matchesSearch = 
         property.flatNo?.toLowerCase().includes(searchLower) ||
         projectName?.toLowerCase().includes(searchLower) ||
@@ -203,9 +211,17 @@ function PropertyManagement() {
     setSelectedProperty(property)
     setShowDetailsModal(true)
     
-    // Fetch progress and gallery data
+    // Fetch detailed progress data (with stages) - still needed for edit modal
     await fetchPropertyProgress(property.id)
-    await fetchPropertyGallery(property.id)
+    
+    // Use images from property if available, otherwise fetch
+    if (property.images && property.images.length > 0) {
+      // Images are already in property, but we need signed URLs for display
+      // Fetch gallery to get signed URLs
+      await fetchPropertyGallery(property.id)
+    } else {
+      setGalleryImages([])
+    }
   }
 
   const fetchPropertyProgress = async (propertyId) => {
@@ -288,8 +304,14 @@ function PropertyManagement() {
       currentStage: normalizedStage
     })
     
-    // Fetch gallery images when opening edit modal
-    await fetchPropertyGallery(property.id)
+    // Use images from property if available, otherwise fetch
+    if (property.images && property.images.length > 0) {
+      // Images are already in property, but we need signed URLs for display
+      // Fetch gallery to get signed URLs
+      await fetchPropertyGallery(property.id)
+    } else {
+      setGalleryImages([])
+    }
     
     setShowEditPropertyModal(true)
   }
@@ -560,17 +582,198 @@ function PropertyManagement() {
     }
   }
 
-  const handleClearFilters = () => {
-    setSearchQuery('')
-    setFilterProject('All Projects')
-    setFilterStatus('All Status')
-    showNotification('Filters cleared!', 'info')
+  const handleManageInstalments = async (property) => {
+    setSelectedProperty(property)
+    setShowInstalmentsModal(true)
+    
+    // Use instalments directly from property
+    const instalments = property.instalments || []
+    
+    if (instalments.length > 0) {
+      // Calculate summary from property.instalments
+      const totalAmount = instalments.reduce((sum, inst) => sum + (inst.amount || 0), 0)
+      const totalPaid = instalments
+        .filter(inst => inst.status === 'paid')
+        .reduce((sum, inst) => sum + (inst.amount || 0), 0)
+      const totalPending = totalAmount - totalPaid
+      
+      setInstalmentsData({
+        instalments: instalments,
+        summary: {
+          totalAmount,
+          totalPaid,
+          totalPending
+        }
+      })
+      setLoadingInstalments(false)
+    } else {
+      // Only fetch if property doesn't have instalments
+      await fetchPropertyInstalments(property.id)
+    }
+  }
+
+  const fetchPropertyInstalments = async (propertyId) => {
+    try {
+      setLoadingInstalments(true)
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}/instalments`)
+      const data = await response.json()
+      if (data.success) {
+        setInstalmentsData(data.data)
+      } else {
+        showNotification('Failed to load instalments', 'error')
+      }
+    } catch (err) {
+      console.error('Error fetching instalments:', err)
+      showNotification('Failed to load instalments', 'error')
+    } finally {
+      setLoadingInstalments(false)
+    }
+  }
+
+  const handleAddInstalment = async () => {
+    if (!newInstalment.number || !newInstalment.dueDate || !newInstalment.amount) {
+      showNotification('Please fill all fields', 'error')
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instalments: [{
+            number: parseInt(newInstalment.number),
+            dueDate: newInstalment.dueDate,
+            amount: parseFloat(newInstalment.amount),
+            status: 'pending'
+          }]
+        })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Instalment added successfully!', 'success')
+        setNewInstalment({ number: '', dueDate: '', amount: '' })
+        await fetchPropertyInstalments(selectedProperty.id)
+        // Refresh properties to get updated instalments
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to add instalment', 'error')
+      }
+    } catch (err) {
+      console.error('Error adding instalment:', err)
+      showNotification('Failed to add instalment', 'error')
+    }
+  }
+
+  const handleUpdateInstalment = async (instalmentId, updateData) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/${instalmentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Instalment updated successfully!', 'success')
+        setEditingInstalment(null)
+        await fetchPropertyInstalments(selectedProperty.id)
+        // Refresh properties to get updated instalments
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to update instalment', 'error')
+      }
+    } catch (err) {
+      console.error('Error updating instalment:', err)
+      showNotification('Failed to update instalment', 'error')
+    }
+  }
+
+  const handleDeleteInstalment = async (instalmentId) => {
+    if (!window.confirm('Are you sure you want to delete this instalment?')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/${instalmentId}`, {
+        method: 'DELETE'
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Instalment deleted successfully!', 'success')
+        await fetchPropertyInstalments(selectedProperty.id)
+        // Refresh properties to get updated instalments
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to delete instalment', 'error')
+      }
+    } catch (err) {
+      console.error('Error deleting instalment:', err)
+      showNotification('Failed to delete instalment', 'error')
+    }
+  }
+
+  const handleMarkPaid = async (instalmentId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/${instalmentId}/mark-paid`, {
+        method: 'POST'
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Instalment marked as paid!', 'success')
+        await fetchPropertyInstalments(selectedProperty.id)
+        // Refresh properties to get updated instalments
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to mark instalment as paid', 'error')
+      }
+    } catch (err) {
+      console.error('Error marking instalment as paid:', err)
+      showNotification('Failed to mark instalment as paid', 'error')
+    }
+  }
+
+  const handleGenerateInstalments = async () => {
+    if (!generateData.count || !generateData.startDate) {
+      showNotification('Please fill all required fields', 'error')
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          count: parseInt(generateData.count),
+          startDate: generateData.startDate,
+          intervalDays: parseInt(generateData.intervalDays) || 30
+        })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Instalments generated successfully!', 'success')
+        setShowGenerateModal(false)
+        setGenerateData({ count: 5, startDate: '', intervalDays: 30 })
+        await fetchPropertyInstalments(selectedProperty.id)
+        // Refresh properties to get updated instalments
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to generate instalments', 'error')
+      }
+    } catch (err) {
+      console.error('Error generating instalments:', err)
+      showNotification('Failed to generate instalments', 'error')
+    }
   }
 
   // Get unique project names for filter
   const uniqueProjects = useMemo(() => {
     const projectNames = properties
-      .map(p => p.project?.name || getProjectName(p.projectId))
+      .map(p => p.project?.name || getProjectName(p))
       .filter((name, index, self) => name && name !== 'N/A' && self.indexOf(name) === index)
     return projectNames.sort()
   }, [properties, projects])
@@ -591,12 +794,27 @@ function PropertyManagement() {
   }
 
   // Define columns
-  const columns = useMemo(() => [
+  const columns = useMemo(() => {
+    // Helper function to calculate instalments progress
+    const getInstalmentsProgress = (property) => {
+      const instalments = property.instalments || []
+      if (instalments.length === 0) return { percentage: 0, paid: 0, total: 0 }
+      
+      const totalAmount = instalments.reduce((sum, inst) => sum + (inst.amount || 0), 0)
+      const paidAmount = instalments
+        .filter(inst => inst.status === 'paid')
+        .reduce((sum, inst) => sum + (inst.amount || 0), 0)
+      
+      const percentage = totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0
+      return { percentage, paid: paidAmount, total: totalAmount }
+    }
+
+    return [
     {
       id: "propertyDetails",
-      size: 280,
-      minSize: 250,
-      maxSize: 350,
+      size: 260,
+      minSize: 240,
+      maxSize: 320,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Property Details" />
       ),
@@ -623,19 +841,18 @@ function PropertyManagement() {
     },
     {
       id: "project",
-      size: 200,
-      minSize: 150,
-      maxSize: 250,
+      size: 180,
+      minSize: 140,
+      maxSize: 220,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Project" />
       ),
       cell: ({ row }) => {
         const property = row.original
         // Use project name from property response if available, otherwise lookup
-        const projectName = property.project?.name || getProjectName(property.projectId)
+        const projectName = property.project?.name || getProjectName(property)
         return (
           <div className="project-info-pm">
-            <Building size={16} style={{ marginRight: '4px', color: 'var(--primary-color)' }} />
             {projectName}
           </div>
         )
@@ -643,9 +860,9 @@ function PropertyManagement() {
     },
     {
       id: "buyer",
-      size: 180,
-      minSize: 150,
-      maxSize: 220,
+      size: 160,
+      minSize: 140,
+      maxSize: 200,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Buyer" />
       ),
@@ -690,9 +907,9 @@ function PropertyManagement() {
     },
     {
       id: "currentStage",
-      size: 150,
-      minSize: 120,
-      maxSize: 180,
+      size: 140,
+      minSize: 110,
+      maxSize: 160,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Current Stage" />
       ),
@@ -700,31 +917,18 @@ function PropertyManagement() {
         const property = row.original
         const progress = getProgress(property)
         const stage = getDisplayStage(progress.stage)
-        const getStageColor = (s) => {
+        const getStageColorClass = (s) => {
           const stageLower = s.toLowerCase()
-          if (stageLower.includes('foundation')) return 'hsl(25 95% 53%)'
-          if (stageLower.includes('structure')) return 'hsl(38 92% 50%)'
-          if (stageLower.includes('finishing')) return 'hsl(142 76% 36%)'
-          return 'hsl(var(--muted-foreground))'
+          if (stageLower.includes('foundation')) return 'status-error'
+          if (stageLower.includes('structure')) return 'status-info'
+          if (stageLower.includes('finishing')) return 'status-success'
+          return 'status-info'
         }
         
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: stage !== 'None' ? getStageColor(stage) : 'hsl(var(--muted-foreground))',
-              boxShadow: stage !== 'None' ? `0 0 8px ${getStageColor(stage)}60` : 'none'
-            }}></div>
-            <span style={{ 
-              fontWeight: '600',
-              color: stage !== 'None' ? 'hsl(var(--foreground)' : 'hsl(var(--muted-foreground))',
-              fontSize: '14px'
-            }}>
-              {stage}
-            </span>
-          </div>
+          <span className={`status-badge ${getStageColorClass(stage)}`}>
+            {stage}
+          </span>
         )
       },
     },
@@ -803,10 +1007,84 @@ function PropertyManagement() {
       },
     },
     {
+      id: "instalmentsProgress",
+      size: 80,
+      minSize: 70,
+      maxSize: 90,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Instalments" />
+      ),
+      cell: ({ row }) => {
+        const property = row.original
+        const instalmentsProgress = getInstalmentsProgress(property)
+        const percentage = instalmentsProgress.percentage || 0
+        const getProgressColor = (pct) => {
+          if (pct >= 75) return 'hsl(142 76% 36%)'
+          if (pct >= 50) return 'hsl(38 92% 50%)'
+          if (pct >= 25) return 'hsl(25 95% 53%)'
+          return 'hsl(0 84% 60%)'
+        }
+        
+        const size = 48
+        const strokeWidth = 4
+        const radius = (size - strokeWidth) / 2
+        const circumference = 2 * Math.PI * radius
+        const offset = circumference - (percentage / 100) * circumference
+        const color = getProgressColor(percentage)
+        
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+            <div style={{ position: 'relative', width: size, height: size }}>
+              <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+                {/* Background circle */}
+                <circle
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={radius}
+                  fill="none"
+                  stroke="hsl(var(--muted))"
+                  strokeWidth={strokeWidth}
+                />
+                {/* Progress circle */}
+                <circle
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={radius}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={circumference}
+                  strokeDashoffset={offset}
+                  strokeLinecap="round"
+                  style={{
+                    transition: 'stroke-dashoffset 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    filter: `drop-shadow(0 0 4px ${color}60)`
+                  }}
+                />
+              </svg>
+              {/* Percentage text in center */}
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: 'hsl(var(--foreground))',
+                lineHeight: '1'
+              }}>
+                {percentage}%
+              </div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
       accessorKey: "status",
-      size: 120,
-      minSize: 100,
-      maxSize: 140,
+      size: 110,
+      minSize: 90,
+      maxSize: 130,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Status" />
       ),
@@ -850,6 +1128,10 @@ function PropertyManagement() {
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Property
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleManageInstalments(property)}>
+                <DollarSign className="mr-2 h-4 w-4" />
+                Manage Instalments
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
                 onClick={() => handleDeleteProperty(property.id)}
@@ -863,7 +1145,8 @@ function PropertyManagement() {
         )
       },
     },
-  ], [])
+    ]
+  }, [])
 
   const table = useReactTable({
     data: filteredProperties,
@@ -893,44 +1176,6 @@ function PropertyManagement() {
           <Plus size={18} style={{ marginRight: '8px' }} />
           Add Property
         </button>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="property-stats-grid">
-        <div className="stat-card-pm">
-          <div className="stat-icon-pm"><Home size={24} /></div>
-          <div>
-            <h3>Total Properties</h3>
-            <p className="stat-value-pm">{properties.length}</p>
-            <span className="stat-label">{filteredProperties.length} shown</span>
-          </div>
-        </div>
-        <div className="stat-card-pm">
-          <div className="stat-icon-pm"><CheckCircle size={24} /></div>
-          <div>
-            <h3>Active Properties</h3>
-            <p className="stat-value-pm">{properties.filter(p => getStatus(p) === 'active').length}</p>
-            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => getStatus(p) === 'active').length / properties.length) * 100) : 0}% active</span>
-          </div>
-        </div>
-        <div className="stat-card-pm">
-          <div className="stat-icon-pm"><XCircle size={24} /></div>
-          <div>
-            <h3>Completed</h3>
-            <p className="stat-value-pm">{properties.filter(p => getStatus(p) === 'completed').length}</p>
-            <span className="stat-label">{properties.length > 0 ? Math.round((properties.filter(p => getStatus(p) === 'completed').length / properties.length) * 100) : 0}% completed</span>
-          </div>
-        </div>
-        <div className="stat-card-pm">
-          <div className="stat-icon-pm"><DollarSign size={24} /></div>
-          <div>
-            <h3>Total Value</h3>
-            <p className="stat-value-pm">
-              ₹{properties.reduce((sum, p) => sum + (p.pricing?.totalPrice || 0), 0).toLocaleString('en-IN')}
-            </p>
-            <span className="stat-label">All properties combined</span>
-          </div>
-        </div>
       </div>
 
       {/* Filters */}
@@ -963,9 +1208,6 @@ function PropertyManagement() {
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <button className="btn btn-outline clear-filters-btn" onClick={handleClearFilters}>
-            Clear Filters
-          </button>
         </div>
       </div>
 
@@ -988,17 +1230,6 @@ function PropertyManagement() {
           </div>
         ) : (
           <>
-            <div className="flex items-center py-4">
-              <Input
-                placeholder="Filter by flat number or project..."
-                value={(table.getColumn("propertyDetails")?.getFilterValue() ?? "")}
-                onChange={(event) =>
-                  table.getColumn("propertyDetails")?.setFilterValue(event.target.value)
-                }
-                className="max-w-sm"
-              />
-              <DataTableViewOptions table={table} />
-            </div>
             <div className="overflow-hidden rounded-md border">
               <Table>
                 <TableHeader>
@@ -1082,7 +1313,7 @@ function PropertyManagement() {
                 </div>
                 <div className="detail-item">
                   <label>Project</label>
-                  <p>{selectedProperty.project?.name || getProjectName(selectedProperty.projectId)}</p>
+                  <p>{selectedProperty.project?.name || getProjectName(selectedProperty)}</p>
                 </div>
                 <div className="detail-item">
                   <label>Location</label>
@@ -1519,6 +1750,420 @@ function PropertyManagement() {
                   {savingProperty ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Instalments Management Modal */}
+      {showInstalmentsModal && selectedProperty && (
+        <div className="modal-overlay" onClick={() => setShowInstalmentsModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px' }}>
+            <div className="modal-header">
+              <h2>Manage Instalments - {selectedProperty.flatNo}</h2>
+              <button className="close-btn" onClick={() => {
+                setShowInstalmentsModal(false)
+                setInstalmentsData(null)
+                setEditingInstalment(null)
+                setNewInstalment({ number: '', dueDate: '', amount: '' })
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              {loadingInstalments ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <p>Loading instalments...</p>
+                </div>
+              ) : instalmentsData ? (
+                <>
+                  {/* Summary Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                    <div style={{ padding: '16px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+                      <div style={{ fontSize: '0.875rem', color: '#0369a1', marginBottom: '4px' }}>Total Amount</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#0c4a6e' }}>
+                        ₹{instalmentsData.summary?.totalAmount?.toLocaleString('en-IN') || '0'}
+                      </div>
+                    </div>
+                    <div style={{ padding: '16px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                      <div style={{ fontSize: '0.875rem', color: '#166534', marginBottom: '4px' }}>Total Paid</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#14532d' }}>
+                        ₹{instalmentsData.summary?.totalPaid?.toLocaleString('en-IN') || '0'}
+                      </div>
+                    </div>
+                    <div style={{ padding: '16px', backgroundColor: '#fef3c7', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                      <div style={{ fontSize: '0.875rem', color: '#92400e', marginBottom: '4px' }}>Total Pending</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: '600', color: '#78350f' }}>
+                        ₹{instalmentsData.summary?.totalPending?.toLocaleString('en-IN') || '0'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={() => setShowGenerateModal(true)}
+                    >
+                      <Plus size={16} style={{ marginRight: '8px' }} />
+                      Auto-Generate Instalments
+                    </button>
+                  </div>
+
+                  {/* Add New Instalment Form */}
+                  <div style={{ padding: '16px', backgroundColor: '#f9fafb', borderRadius: '8px', marginBottom: '24px' }}>
+                    <h4 style={{ marginBottom: '12px' }}>Add New Instalment</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                          Number
+                        </label>
+                        <input
+                          type="number"
+                          value={newInstalment.number}
+                          onChange={(e) => setNewInstalment({ ...newInstalment, number: e.target.value })}
+                          placeholder="1"
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                          Due Date
+                        </label>
+                        <input
+                          type="date"
+                          value={newInstalment.dueDate}
+                          onChange={(e) => setNewInstalment({ ...newInstalment, dueDate: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                          Amount (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={newInstalment.amount}
+                          onChange={(e) => setNewInstalment({ ...newInstalment, amount: e.target.value })}
+                          placeholder="500000"
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+                      <button 
+                        className="btn btn-primary" 
+                        onClick={handleAddInstalment}
+                        style={{ height: '38px' }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Instalments Table */}
+                  <div style={{ marginBottom: '24px' }}>
+                    <h4 style={{ marginBottom: '12px' }}>Instalments List</h4>
+                    {instalmentsData.instalments && instalmentsData.instalments.length > 0 ? (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
+                              <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>#</th>
+                              <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Due Date</th>
+                              <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Amount</th>
+                              <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Status</th>
+                              <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Paid Date</th>
+                              <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {instalmentsData.instalments.map((instalment) => (
+                              <tr key={instalment._id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                <td style={{ padding: '12px' }}>{instalment.number}</td>
+                                <td style={{ padding: '12px' }}>
+                                  {new Date(instalment.dueDate).toLocaleDateString('en-IN')}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: '500' }}>
+                                  ₹{instalment.amount?.toLocaleString('en-IN')}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'center' }}>
+                                  <span className={`status-badge ${
+                                    instalment.status === 'paid' ? 'status-success' : 'status-error'
+                                  }`}>
+                                    {instalment.status}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'center', fontSize: '0.875rem' }}>
+                                  {instalment.paidAt ? new Date(instalment.paidAt).toLocaleDateString('en-IN') : '-'}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                    {instalment.status === 'pending' && (
+                                      <button
+                                        className="btn btn-sm btn-primary"
+                                        onClick={() => handleMarkPaid(instalment._id)}
+                                        style={{ padding: '4px 12px', fontSize: '0.875rem' }}
+                                      >
+                                        Mark Paid
+                                      </button>
+                                    )}
+                                    <button
+                                      className="btn btn-sm btn-outline"
+                                      onClick={() => setEditingInstalment(instalment)}
+                                      style={{ padding: '4px 12px', fontSize: '0.875rem' }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="btn btn-sm btn-outline"
+                                      onClick={() => handleDeleteInstalment(instalment._id)}
+                                      style={{ padding: '4px 12px', fontSize: '0.875rem', color: '#dc2626' }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                        No instalments found. Add instalments manually or use auto-generate.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Edit Instalment Modal */}
+                  {editingInstalment && (
+                    <div style={{ 
+                      position: 'fixed', 
+                      top: 0, 
+                      left: 0, 
+                      right: 0, 
+                      bottom: 0, 
+                      backgroundColor: 'rgba(0,0,0,0.5)', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      zIndex: 1000
+                    }}>
+                      <div style={{ 
+                        backgroundColor: 'white', 
+                        padding: '24px', 
+                        borderRadius: '8px', 
+                        width: '90%', 
+                        maxWidth: '500px' 
+                      }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={{ marginBottom: '16px' }}>Edit Instalment</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                              Number
+                            </label>
+                            <input
+                              type="number"
+                              value={editingInstalment.number}
+                              onChange={(e) => setEditingInstalment({ ...editingInstalment, number: parseInt(e.target.value) })}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                              Due Date
+                            </label>
+                            <input
+                              type="date"
+                              value={editingInstalment.dueDate ? new Date(editingInstalment.dueDate).toISOString().split('T')[0] : ''}
+                              onChange={(e) => setEditingInstalment({ ...editingInstalment, dueDate: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                              Amount (₹)
+                            </label>
+                            <input
+                              type="number"
+                              value={editingInstalment.amount}
+                              onChange={(e) => setEditingInstalment({ ...editingInstalment, amount: parseFloat(e.target.value) })}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                            <button
+                              className="btn btn-outline"
+                              onClick={() => setEditingInstalment(null)}
+                              style={{ flex: 1 }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => {
+                                handleUpdateInstalment(editingInstalment._id, {
+                                  number: editingInstalment.number,
+                                  dueDate: editingInstalment.dueDate,
+                                  amount: editingInstalment.amount
+                                })
+                              }}
+                              style={{ flex: 1 }}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generate Instalments Modal */}
+                  {showGenerateModal && (
+                    <div style={{ 
+                      position: 'fixed', 
+                      top: 0, 
+                      left: 0, 
+                      right: 0, 
+                      bottom: 0, 
+                      backgroundColor: 'rgba(0,0,0,0.5)', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      zIndex: 1000
+                    }}>
+                      <div style={{ 
+                        backgroundColor: 'white', 
+                        padding: '24px', 
+                        borderRadius: '8px', 
+                        width: '90%', 
+                        maxWidth: '500px' 
+                      }} onClick={(e) => e.stopPropagation()}>
+                        <h3 style={{ marginBottom: '16px' }}>Auto-Generate Instalments</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                              Number of Instalments
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={generateData.count}
+                              onChange={(e) => setGenerateData({ ...generateData, count: parseInt(e.target.value) })}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                              Start Date
+                            </label>
+                            <input
+                              type="date"
+                              value={generateData.startDate}
+                              onChange={(e) => setGenerateData({ ...generateData, startDate: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                              Interval (Days)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={generateData.intervalDays}
+                              onChange={(e) => setGenerateData({ ...generateData, intervalDays: parseInt(e.target.value) })}
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #ddd',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <div style={{ 
+                            padding: '12px', 
+                            backgroundColor: '#fef3c7', 
+                            borderRadius: '4px', 
+                            fontSize: '0.875rem',
+                            color: '#92400e'
+                          }}>
+                            <strong>Note:</strong> This will replace all existing instalments. The first instalment will use the booking amount (if set), and the remaining amount will be divided equally.
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                            <button
+                              className="btn btn-outline"
+                              onClick={() => setShowGenerateModal(false)}
+                              style={{ flex: 1 }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              onClick={handleGenerateInstalments}
+                              style={{ flex: 1 }}
+                            >
+                              Generate
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="modal-actions">
+                    <button className="btn btn-outline" onClick={() => {
+                      setShowInstalmentsModal(false)
+                      setInstalmentsData(null)
+                      setEditingInstalment(null)
+                      setNewInstalment({ number: '', dueDate: '', amount: '' })
+                    }}>
+                      Close
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <p>No instalments data available</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
