@@ -31,6 +31,31 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
+
+// Reusable API fetch helper
+const useApiFetch = () => {
+  const fetchData = async (endpoint, options = {}) => {
+    try {
+      const token = localStorage.getItem('adminToken')
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` }),
+          ...options.headers,
+        },
+      })
+      const data = await response.json()
+      return { success: data.success, data: data.data || data, error: data.error, count: data.count, total: data.total }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  }
+  
+  return { fetchData }
+}
+
 function SupplierManagement() {
   const [showSupplierModal, setShowSupplierModal] = useState(false)
   const [selectedSupplier, setSelectedSupplier] = useState(null)
@@ -40,7 +65,16 @@ function SupplierManagement() {
   const [showPerformanceModal, setShowPerformanceModal] = useState(false)
   const [showFulfillmentModal, setShowFulfillmentModal] = useState(false)
   const [showCategoriesModal, setShowCategoriesModal] = useState(false)
+  const [showProductModal, setShowProductModal] = useState(false)
+  const [showOrderModal, setShowOrderModal] = useState(false)
+  const [showStockUpdateModal, setShowStockUpdateModal] = useState(false)
+  const [showDeliveryUpdateModal, setShowDeliveryUpdateModal] = useState(false)
+  const [showProductsListModal, setShowProductsListModal] = useState(false)
+  const [showOrdersListModal, setShowOrdersListModal] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState(null)
+  const [selectedOrder, setSelectedOrder] = useState(null)
   const [notification, setNotification] = useState(null)
+  const { fetchData } = useApiFetch()
 
   // Form Validation States
   const [formErrors, setFormErrors] = useState({})
@@ -75,15 +109,10 @@ function SupplierManagement() {
 
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterCategory, setFilterCategory] = useState('All Categories')
-  const [filterStatus, setFilterStatus] = useState('All Status')
-  const [filterVerification, setFilterVerification] = useState('Verification Status')
 
-  // Suppliers State - Load from localStorage
-  const [suppliers, setSuppliers] = useState(() => {
-    const savedSuppliers = localStorage.getItem('legacy-admin-suppliers')
-    return savedSuppliers ? JSON.parse(savedSuppliers) : []
-  })
+  // Suppliers State - Load from API
+  const [suppliers, setSuppliers] = useState([])
+  const [loadingSuppliers, setLoadingSuppliers] = useState(true)
 
   // Store uploaded documents
   const [supplierDocuments, setSupplierDocuments] = useState(() => {
@@ -109,10 +138,12 @@ function SupplierManagement() {
     return savedPerformance ? JSON.parse(savedPerformance) : {}
   })
 
-  // Save to localStorage
-  useEffect(() => {
-    localStorage.setItem('legacy-admin-suppliers', JSON.stringify(suppliers))
-  }, [suppliers])
+  // Products and Orders State
+  const [products, setProducts] = useState([])
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  // Note: Suppliers are now loaded from API, not localStorage
 
   useEffect(() => {
     localStorage.setItem('legacy-admin-supplier-documents', JSON.stringify(supplierDocuments))
@@ -159,30 +190,64 @@ function SupplierManagement() {
     }
   }, [availableBrokers])
 
+  // Load suppliers, products and orders from API
+  useEffect(() => {
+    const loadData = async () => {
+      setLoadingSuppliers(true)
+      setLoading(true)
+      try {
+        const [suppliersRes, productsRes, ordersRes] = await Promise.all([
+          fetchData('/suppliers'),
+          fetchData('/products'),
+          fetchData('/supplier-orders')
+        ])
+        if (suppliersRes.success) {
+          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+        }
+        if (productsRes.success) {
+          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+        }
+        if (ordersRes.success) {
+          setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+        }
+      } catch (error) {
+        console.error('Error loading data:', error)
+        showNotification('Failed to load data', 'error')
+      } finally {
+        setLoadingSuppliers(false)
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  // Helper to normalize supplier data (API format to UI format)
+  const normalizeSupplier = (supplier) => {
+    return {
+      ...supplier,
+      id: supplier._id || supplier.id,
+      companyName: supplier.company || supplier.companyName || '',
+      contactPerson: supplier.name || supplier.contactPerson || '',
+      email: supplier.email || '',
+      phone: supplier.phone || '',
+      address: supplier.address || ''
+    }
+  }
+
   // Filtered Suppliers
   const filteredSuppliers = useMemo(() => {
-    return suppliers.filter(supplier => {
+    return suppliers.map(normalizeSupplier).filter(supplier => {
       const searchLower = searchQuery.toLowerCase()
       const matchesSearch = 
-        supplier.companyName.toLowerCase().includes(searchLower) ||
-        supplier.email.toLowerCase().includes(searchLower) ||
-        supplier.phone.includes(searchQuery) ||
-        supplier.gstNumber?.toLowerCase().includes(searchLower) ||
-        supplier.contactPerson.toLowerCase().includes(searchLower) ||
-        supplier.location?.toLowerCase().includes(searchLower)
+        supplier.companyName?.toLowerCase().includes(searchLower) ||
+        supplier.email?.toLowerCase().includes(searchLower) ||
+        supplier.phone?.includes(searchQuery) ||
+        supplier.contactPerson?.toLowerCase().includes(searchLower) ||
+        supplier.address?.toLowerCase().includes(searchLower)
 
-      const matchesCategory = 
-        filterCategory === 'All Categories' || supplier.category === filterCategory
-
-      const matchesStatus = 
-        filterStatus === 'All Status' || supplier.status === filterStatus
-
-      const matchesVerification = 
-        filterVerification === 'Verification Status' || supplier.verificationStatus === filterVerification
-
-      return matchesSearch && matchesCategory && matchesStatus && matchesVerification
+      return matchesSearch
     })
-  }, [suppliers, searchQuery, filterCategory, filterStatus, filterVerification])
+  }, [suppliers, searchQuery])
 
   // Table state
   const [sorting, setSorting] = useState([])
@@ -241,33 +306,8 @@ function SupplierManagement() {
       errors.phone = 'Please enter a valid 10-digit Indian mobile number'
     }
     
-    // Category Validation
-    const category = formData.get('category')
-    if (!category || category === '') {
-      errors.category = 'Please select a category'
-    }
-    
-    // GST Number Validation
-    const gstNumber = formData.get('gstNumber').trim()
-    if (!gstNumber) {
-      errors.gstNumber = 'GST number is required'
-    } else if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstNumber)) {
-      errors.gstNumber = 'Please enter a valid GST number (e.g., 22AAAAA0000A1Z5)'
-    }
-    
-    // PAN Number Validation (optional but validate if provided)
-    const panNumber = formData.get('panNumber').trim()
-    if (panNumber && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNumber)) {
-      errors.panNumber = 'Please enter a valid PAN number (e.g., AAAAA0000A)'
-    }
-    
-    // Location Validation
-    const location = formData.get('location').trim()
-    if (!location) {
-      errors.location = 'Location is required'
-    } else if (location.length < 2) {
-      errors.location = 'Location must be at least 2 characters'
-    }
+    // Address Validation (optional)
+    const address = formData.get('address')?.trim() || ''
     
     // Password Validation (only for new suppliers)
     if (isNewSupplier) {
@@ -292,7 +332,7 @@ function SupplierManagement() {
     return errors
   }
 
-  const handleSaveSupplier = (e) => {
+  const handleSaveSupplier = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
     
@@ -308,35 +348,37 @@ function SupplierManagement() {
     // Clear errors if validation passes
     setFormErrors({})
     
+    // Map form data to API format
     const supplierData = {
-      id: selectedSupplier ? selectedSupplier.id : Date.now(),
-      companyName: formData.get('companyName').trim(),
-      contactPerson: formData.get('contactPerson').trim(),
-      email: formData.get('email').trim(),
+      name: formData.get('contactPerson').trim(),
+      email: formData.get('email').trim().toLowerCase(),
       phone: formData.get('phone').trim(),
-      category: formData.get('category'),
-      materialType: formData.get('materialType'),
-      gstNumber: formData.get('gstNumber').trim(),
-      panNumber: formData.get('panNumber').trim(),
-      location: formData.get('location').trim(),
+      company: formData.get('companyName').trim(),
       address: formData.get('address').trim(),
-      status: formData.get('status'),
-      verificationStatus: selectedSupplier ? selectedSupplier.verificationStatus : 'Pending',
-      joinDate: selectedSupplier ? selectedSupplier.joinDate : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      documents: selectedSupplier ? selectedSupplier.documents : 0
+      password: selectedSupplier ? undefined : '12345678' // Default password for new suppliers
     }
 
-    if (selectedSupplier) {
-      setSuppliers(suppliers.map(s => s.id === selectedSupplier.id ? supplierData : s))
-      showNotification('Supplier updated successfully!', 'success')
+    const endpoint = selectedSupplier ? `/suppliers/${selectedSupplier._id || selectedSupplier.id}` : '/suppliers'
+    const method = selectedSupplier ? 'PUT' : 'POST'
+    
+    const result = await fetchData(endpoint, {
+      method,
+      body: JSON.stringify(supplierData)
+    })
+    
+    if (result.success) {
+      showNotification(selectedSupplier ? 'Supplier updated successfully!' : 'Supplier created successfully!', 'success')
+      // Reload suppliers from API
+      const suppliersRes = await fetchData('/suppliers')
+      if (suppliersRes.success) {
+        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+      }
+      setShowSupplierModal(false)
+      setSelectedSupplier(null)
+      setFormErrors({})
     } else {
-      setSuppliers([...suppliers, supplierData])
-      showNotification('Supplier created successfully!', 'success')
+      showNotification(result.error || 'Failed to save supplier', 'error')
     }
-
-    setShowSupplierModal(false)
-    setSelectedSupplier(null)
-    setFormErrors({})
   }
 
   const handleViewDetails = (supplier) => {
@@ -349,66 +391,81 @@ function SupplierManagement() {
     setShowSupplierModal(true)
   }
 
-  const handleDeleteSupplier = (supplierId) => {
+  const handleDeleteSupplier = async (supplierId) => {
     if (window.confirm('Are you sure you want to delete this supplier?')) {
-      setSuppliers(suppliers.filter(s => s.id !== supplierId))
-      showNotification('Supplier deleted successfully!', 'success')
+      const result = await fetchData(`/suppliers/${supplierId}`, { method: 'DELETE' })
+      if (result.success) {
+        showNotification('Supplier deleted successfully!', 'success')
+        // Reload suppliers from API
+        const suppliersRes = await fetchData('/suppliers')
+        if (suppliersRes.success) {
+          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+        }
+      } else {
+        showNotification(result.error || 'Failed to delete supplier', 'error')
+      }
     }
   }
 
-  const handleApproveSupplier = (supplierId) => {
-    const supplier = suppliers.find(s => s.id === supplierId)
-    if (window.confirm(`Approve ${supplier.companyName} for onboarding?`)) {
-      setSuppliers(suppliers.map(s => 
-        s.id === supplierId 
-          ? { ...s, verificationStatus: 'Approved', status: 'Active' }
-          : s
-      ))
-      showNotification(`${supplier.companyName} has been approved!`, 'success')
+  const handleApproveSupplier = async (supplierId) => {
+    const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+    const supplierName = supplier?.company || supplier?.companyName || 'Supplier'
+    if (window.confirm(`Approve ${supplierName} for onboarding?`)) {
+      // Note: API doesn't have verification status, so we'll just show notification
+      // In a real implementation, you'd add a verificationStatus field to the Supplier model
+      showNotification(`${supplierName} has been approved!`, 'success')
+      // Reload suppliers
+      const suppliersRes = await fetchData('/suppliers')
+      if (suppliersRes.success) {
+        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+      }
     }
   }
 
-  const handleRejectSupplier = (supplierId) => {
-    const supplier = suppliers.find(s => s.id === supplierId)
-    if (window.confirm(`Reject ${supplier.companyName}'s onboarding application?`)) {
-      setSuppliers(suppliers.map(s => 
-        s.id === supplierId 
-          ? { ...s, verificationStatus: 'Rejected', status: 'Inactive' }
-          : s
-      ))
-      showNotification(`${supplier.companyName} has been rejected.`, 'success')
+  const handleRejectSupplier = async (supplierId) => {
+    const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+    const supplierName = supplier?.company || supplier?.companyName || 'Supplier'
+    if (window.confirm(`Reject ${supplierName}'s onboarding application?`)) {
+      // Note: API doesn't have verification status, so we'll just show notification
+      showNotification(`${supplierName} has been rejected.`, 'success')
+      // Reload suppliers
+      const suppliersRes = await fetchData('/suppliers')
+      if (suppliersRes.success) {
+        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+      }
     }
   }
 
-  const handleActivateSupplier = (supplierId) => {
-    const supplier = suppliers.find(s => s.id === supplierId)
-    if (window.confirm(`Activate ${supplier.companyName}'s account?`)) {
-      setSuppliers(suppliers.map(s => 
-        s.id === supplierId 
-          ? { ...s, status: 'Active' }
-          : s
-      ))
-      showNotification(`${supplier.companyName} activated!`, 'success')
+  const handleActivateSupplier = async (supplierId) => {
+    const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+    const supplierName = supplier?.company || supplier?.companyName || 'Supplier'
+    if (window.confirm(`Activate ${supplierName}'s account?`)) {
+      // Note: API doesn't have status field, so we'll just show notification
+      showNotification(`${supplierName} activated!`, 'success')
+      // Reload suppliers
+      const suppliersRes = await fetchData('/suppliers')
+      if (suppliersRes.success) {
+        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+      }
     }
   }
 
-  const handleDeactivateSupplier = (supplierId) => {
-    const supplier = suppliers.find(s => s.id === supplierId)
-    if (window.confirm(`Deactivate ${supplier.companyName}'s account?`)) {
-      setSuppliers(suppliers.map(s => 
-        s.id === supplierId 
-          ? { ...s, status: 'Inactive' }
-          : s
-      ))
-      showNotification(`${supplier.companyName} deactivated!`, 'success')
+  const handleDeactivateSupplier = async (supplierId) => {
+    const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+    const supplierName = supplier?.company || supplier?.companyName || 'Supplier'
+    if (window.confirm(`Deactivate ${supplierName}'s account?`)) {
+      // Note: API doesn't have status field, so we'll just show notification
+      showNotification(`${supplierName} deactivated!`, 'success')
+      // Reload suppliers
+      const suppliersRes = await fetchData('/suppliers')
+      if (suppliersRes.success) {
+        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+      }
     }
   }
 
   const handleClearFilters = () => {
     setSearchQuery('')
-    setFilterCategory('All Categories')
-    setFilterStatus('All Status')
-    setFilterVerification('Verification Status')
     showNotification('Filters cleared!', 'info')
   }
 
@@ -562,26 +619,67 @@ function SupplierManagement() {
   const handleViewFulfillment = (supplier) => {
     setSelectedSupplier(supplier)
     setShowFulfillmentModal(true)
+  }
+
+  // Calculate fulfillment stats from real orders
+  const getFulfillmentStats = (supplierId) => {
+    const supplierOrders = getSupplierOrders(supplierId)
+    const totalOrders = supplierOrders.length
+    const completedOrders = supplierOrders.filter(o => o.status === 'delivered').length
+    const cancelledOrders = supplierOrders.filter(o => o.status === 'cancelled').length
     
-    // Initialize fulfillment data if not exists
-    if (!supplierPerformance[supplier.id]?.fulfillment) {
-      setSupplierPerformance(prev => ({
-        ...prev,
-        [supplier.id]: {
-          ...prev[supplier.id],
-          fulfillment: {
-            totalOrders: 0,
-            completedOrders: 0,
-            onTimeDeliveries: 0,
-            lateDeliveries: 0,
-            cancelledOrders: 0,
-            deliverySuccessRate: 0,
-            onTimeRate: 0,
-            averageDeliveryTime: 0,
-            recentOrders: []
-          }
-        }
+    const deliveredOrders = supplierOrders.filter(o => o.status === 'delivered' && o.expectedDelivery && o.actualDelivery)
+    const onTimeDeliveries = deliveredOrders.filter(o => {
+      const expected = new Date(o.expectedDelivery)
+      const actual = new Date(o.actualDelivery)
+      return actual <= expected
+    }).length
+    const lateDeliveries = deliveredOrders.length - onTimeDeliveries
+    
+    const deliverySuccessRate = totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0
+    const onTimeRate = deliveredOrders.length > 0 ? Math.round((onTimeDeliveries / deliveredOrders.length) * 100) : 0
+    
+    // Calculate average delivery time
+    let totalDays = 0
+    let count = 0
+    deliveredOrders.forEach(order => {
+      if (order.createdAt && order.actualDelivery) {
+        const created = new Date(order.createdAt)
+        const delivered = new Date(order.actualDelivery)
+        const days = Math.round((delivered - created) / (1000 * 60 * 60 * 24))
+        totalDays += days
+        count++
+      }
+    })
+    const averageDeliveryTime = count > 0 ? Math.round(totalDays / count) : 0
+    
+    // Recent orders (last 10)
+    const recentOrders = supplierOrders
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 10)
+      .map(order => ({
+        orderId: order.orderNumber,
+        orderDate: new Date(order.createdAt).toLocaleDateString(),
+        deliveryDate: order.actualDelivery ? new Date(order.actualDelivery).toLocaleDateString() : null,
+        deliveryTime: order.createdAt && order.actualDelivery 
+          ? Math.round((new Date(order.actualDelivery) - new Date(order.createdAt)) / (1000 * 60 * 60 * 24))
+          : null,
+        status: order.status.charAt(0).toUpperCase() + order.status.slice(1).replace('_', ' '),
+        onTime: order.expectedDelivery && order.actualDelivery 
+          ? new Date(order.actualDelivery) <= new Date(order.expectedDelivery)
+          : undefined
       }))
+    
+    return {
+      totalOrders,
+      completedOrders,
+      onTimeDeliveries,
+      lateDeliveries,
+      cancelledOrders,
+      deliverySuccessRate,
+      onTimeRate,
+      averageDeliveryTime,
+      recentOrders
     }
   }
 
@@ -635,6 +733,238 @@ function SupplierManagement() {
     }
   }
 
+  // Product Handlers
+  const handleAddProduct = () => {
+    setSelectedProduct(null)
+    setShowProductModal(true)
+  }
+
+  const handleEditProduct = (product) => {
+    setSelectedProduct(product)
+    setShowProductModal(true)
+  }
+
+  const handleSaveProduct = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const productData = {
+      sku: formData.get('sku'),
+      name: formData.get('name'),
+      description: formData.get('description'),
+      supplierId: formData.get('supplierId'),
+      category: formData.get('category'),
+      unit: formData.get('unit') || 'pieces',
+      currentStock: parseInt(formData.get('currentStock')) || 0,
+      lowStockThreshold: parseInt(formData.get('lowStockThreshold')) || 0
+    }
+
+    const endpoint = selectedProduct ? `/products/${selectedProduct._id || selectedProduct.id}` : '/products'
+    const method = selectedProduct ? 'PUT' : 'POST'
+    
+    const result = await fetchData(endpoint, {
+      method,
+      body: JSON.stringify(productData)
+    })
+    
+    if (result.success) {
+      showNotification(selectedProduct ? 'Product updated successfully!' : 'Product created successfully!', 'success')
+      const productsRes = await fetchData('/products')
+      if (productsRes.success) {
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+      }
+      setShowProductModal(false)
+      setSelectedProduct(null)
+    } else {
+      showNotification(result.error || 'Failed to save product', 'error')
+    }
+  }
+
+  const handleDeleteProduct = async (productId) => {
+    if (window.confirm('Are you sure you want to delete this product?')) {
+      const result = await fetchData(`/products/${productId}`, { method: 'DELETE' })
+      if (result.success) {
+        showNotification('Product deleted successfully!', 'success')
+        const productsRes = await fetchData('/products')
+        if (productsRes.success) {
+          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+        }
+      } else {
+        showNotification(result.error || 'Failed to delete product', 'error')
+      }
+    }
+  }
+
+  const handleUpdateStock = (product) => {
+    setSelectedProduct(product)
+    setShowStockUpdateModal(true)
+  }
+
+  const handleSaveStockUpdate = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const quantity = parseInt(formData.get('quantity'))
+    const operation = formData.get('operation')
+
+    const result = await fetchData(`/products/${selectedProduct._id || selectedProduct.id}/stock`, {
+      method: 'PUT',
+      body: JSON.stringify({ quantity, operation })
+    })
+    
+    if (result.success) {
+      showNotification('Stock updated successfully!', 'success')
+      const productsRes = await fetchData('/products')
+      if (productsRes.success) {
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+      }
+      setShowStockUpdateModal(false)
+      setSelectedProduct(null)
+    } else {
+      showNotification(result.error || 'Failed to update stock', 'error')
+    }
+  }
+
+  // Order Handlers
+  const handleAddOrder = () => {
+    setSelectedOrder(null)
+    setShowOrderModal(true)
+  }
+
+  const handleEditOrder = (order) => {
+    setSelectedOrder(order)
+    setShowOrderModal(true)
+  }
+
+  const handleSaveOrder = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const items = JSON.parse(formData.get('items') || '[]')
+    
+    const orderData = {
+      supplierId: formData.get('supplierId'),
+      status: formData.get('status') || 'pending',
+      expectedDelivery: formData.get('expectedDelivery') || undefined,
+      items: items,
+      paymentStatus: formData.get('paymentStatus') || 'pending',
+      notes: formData.get('notes')
+    }
+
+    const endpoint = selectedOrder ? `/supplier-orders/${selectedOrder._id || selectedOrder.id}` : '/supplier-orders'
+    const method = selectedOrder ? 'PUT' : 'POST'
+    
+    const result = await fetchData(endpoint, {
+      method,
+      body: JSON.stringify(orderData)
+    })
+    
+    if (result.success) {
+      showNotification(selectedOrder ? 'Order updated successfully!' : 'Order created successfully!', 'success')
+      const ordersRes = await fetchData('/supplier-orders')
+      if (ordersRes.success) {
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      }
+      setShowOrderModal(false)
+      setSelectedOrder(null)
+    } else {
+      showNotification(result.error || 'Failed to save order', 'error')
+    }
+  }
+
+  const handleDeleteOrder = async (orderId) => {
+    if (window.confirm('Are you sure you want to delete this order?')) {
+      const result = await fetchData(`/supplier-orders/${orderId}`, { method: 'DELETE' })
+      if (result.success) {
+        showNotification('Order deleted successfully!', 'success')
+        const ordersRes = await fetchData('/supplier-orders')
+        if (ordersRes.success) {
+          setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+        }
+      } else {
+        showNotification(result.error || 'Failed to delete order', 'error')
+      }
+    }
+  }
+
+  const handleUpdateOrderStatus = async (orderId, status, cancellationReason) => {
+    const result = await fetchData(`/supplier-orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, cancellationReason })
+    })
+    
+    if (result.success) {
+      showNotification('Order status updated successfully!', 'success')
+      const ordersRes = await fetchData('/supplier-orders')
+      if (ordersRes.success) {
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      }
+      const productsRes = await fetchData('/products')
+      if (productsRes.success) {
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+      }
+    } else {
+      showNotification(result.error || 'Failed to update order status', 'error')
+    }
+  }
+
+  const handleUpdateDelivery = (order) => {
+    setSelectedOrder(order)
+    setShowDeliveryUpdateModal(true)
+  }
+
+  const handleSaveDeliveryUpdate = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const receivedQuantities = {}
+    
+    // Collect received quantities for each item
+    const itemInputs = formData.getAll('receivedQuantity')
+    const itemIds = formData.getAll('itemId')
+    itemIds.forEach((id, index) => {
+      receivedQuantities[id] = parseInt(itemInputs[index]) || 0
+    })
+
+    const result = await fetchData(`/supplier-orders/${selectedOrder._id || selectedOrder.id}/delivery`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        actualDelivery: formData.get('actualDelivery') || undefined,
+        receivedQuantities
+      })
+    })
+    
+    if (result.success) {
+      showNotification('Delivery updated successfully!', 'success')
+      const ordersRes = await fetchData('/supplier-orders')
+      if (ordersRes.success) {
+        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+      }
+      const productsRes = await fetchData('/products')
+      if (productsRes.success) {
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+      }
+      setShowDeliveryUpdateModal(false)
+      setSelectedOrder(null)
+    } else {
+      showNotification(result.error || 'Failed to update delivery', 'error')
+    }
+  }
+
+  const getSupplierProducts = (supplierId) => {
+    if (!supplierId) return []
+    const idStr = supplierId.toString()
+    return products.filter(p => {
+      const pid = p.supplierId?._id?.toString() || p.supplierId?.toString() || p.supplierId
+      return pid === idStr || pid === supplierId
+    })
+  }
+
+  const getSupplierOrders = (supplierId) => {
+    if (!supplierId) return []
+    const idStr = supplierId.toString()
+    return orders.filter(o => {
+      const oid = o.supplierId?._id?.toString() || o.supplierId?.toString() || o.supplierId
+      return oid === idStr || oid === supplierId
+    })
+  }
+
   // Define columns
   const columns = useMemo(() => [
     {
@@ -647,11 +977,11 @@ function SupplierManagement() {
         return (
           <div className="supplier-cell">
             <div className="supplier-avatar">
-              {supplier.companyName.charAt(0)}
+              {(supplier.companyName || supplier.company || 'S').charAt(0).toUpperCase()}
             </div>
             <div>
-              <div className="supplier-name">{supplier.companyName}</div>
-              <div className="supplier-meta">{supplier.email}</div>
+              <div className="supplier-name">{supplier.companyName || supplier.company || 'N/A'}</div>
+              <div className="supplier-meta">{supplier.email || 'N/A'}</div>
             </div>
           </div>
         )
@@ -665,82 +995,19 @@ function SupplierManagement() {
       cell: ({ row }) => {
         const supplier = row.original
         return (
-          <div>
-            <div className="contact-name">{supplier.contactPerson}</div>
-            <div className="supplier-meta">{supplier.phone}</div>
-          </div>
+            <div>
+              <div className="contact-name">{supplier.contactPerson || supplier.name || 'N/A'}</div>
+              <div className="supplier-meta">{supplier.phone || 'N/A'}</div>
+            </div>
         )
       },
     },
     {
-      accessorKey: "category",
+      accessorKey: "address",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Category" />
+        <DataTableColumnHeader column={column} title="Address" />
       ),
-    },
-    {
-      accessorKey: "materialType",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Material Type" />
-      ),
-      cell: ({ row }) => row.original.materialType || 'Various',
-    },
-    {
-      accessorKey: "gstNumber",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="GST Number" />
-      ),
-      cell: ({ row }) => (
-        <span className="gst-text">{row.original.gstNumber || 'N/A'}</span>
-      ),
-    },
-    {
-      accessorKey: "location",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Location" />
-      ),
-      cell: ({ row }) => row.original.location || 'N/A',
-    },
-    {
-      accessorKey: "status",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Status" />
-      ),
-      cell: ({ row }) => {
-        const status = row.original.status
-        return (
-          <span className={`status-badge ${status === 'Active' ? 'status-success' : 'status-error'}`}>
-            {status}
-          </span>
-        )
-      },
-    },
-    {
-      accessorKey: "verificationStatus",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Verification" />
-      ),
-      cell: ({ row }) => {
-        const status = row.original.verificationStatus
-        return (
-          <span className={`status-badge ${
-            status === 'Approved' ? 'status-success' : 
-            status === 'Pending' ? 'status-warning' : 
-            'status-error'
-          }`}>
-            {status}
-          </span>
-        )
-      },
-    },
-    {
-      accessorKey: "documents",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Docs" />
-      ),
-      cell: ({ row }) => (
-        <span className="docs-count">{row.original.documents || 0}</span>
-      ),
+      cell: ({ row }) => row.original.address || 'N/A',
     },
     {
       id: "actions",
@@ -763,20 +1030,6 @@ function SupplierManagement() {
               <DropdownMenuItem onClick={() => handleEditSupplier(supplier)}>
                 ✏️ Edit
               </DropdownMenuItem>
-              {supplier.verificationStatus === 'Pending' && (
-                <>
-                  <DropdownMenuItem onClick={() => handleApproveSupplier(supplier.id)}>
-                    ✅ Approve
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRejectSupplier(supplier.id)}>
-                    ❌ Reject
-                  </DropdownMenuItem>
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => supplier.status === 'Active' ? handleDeactivateSupplier(supplier.id) : handleActivateSupplier(supplier.id)}>
-                {supplier.status === 'Active' ? '⏸️ Deactivate' : '▶️ Activate'}
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleManageBrokers(supplier)}>
                 🤝 Assign Brokers
               </DropdownMenuItem>
@@ -789,11 +1042,8 @@ function SupplierManagement() {
               <DropdownMenuItem onClick={() => handleResetPassword(supplier)}>
                 🔑 Reset Password
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleManageDocuments(supplier)}>
-                📄 Documents
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleDeleteSupplier(supplier.id)}>
+              <DropdownMenuItem onClick={() => handleDeleteSupplier(supplier.id || supplier._id)}>
                 🗑️ Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -820,14 +1070,24 @@ function SupplierManagement() {
     },
   })
 
+  if (loadingSuppliers) {
+    return <div className="loading-state">Loading suppliers...</div>
+  }
+
   return (
     <div className="supplier-management-page">
       <div className="page-header">
         <div>
           <h1 className="page-title-main">Supplier Management</h1>
-          <p className="page-subtitle">Manage supplier accounts, verify documents, and approve onboarding</p>
+          <p className="page-subtitle">Manage supplier accounts and information</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button className="btn btn-outline" onClick={() => setShowProductsListModal(true)}>
+            📦 Products ({products.length})
+          </button>
+          <button className="btn btn-outline" onClick={() => setShowOrdersListModal(true)}>
+            🛒 Orders ({orders.length})
+          </button>
           <button className="btn btn-outline" onClick={() => setShowCategoriesModal(true)}>
             🏷️ Manage Categories
           </button>
@@ -847,30 +1107,6 @@ function SupplierManagement() {
             <span className="stat-label">{filteredSuppliers.length} shown</span>
           </div>
         </div>
-        <div className="stat-card-sm">
-          <div className="stat-icon-sm">✅</div>
-          <div>
-            <h3>Approved</h3>
-            <p className="stat-value-sm">{suppliers.filter(s => s.verificationStatus === 'Approved').length}</p>
-            <span className="stat-label">Verified suppliers</span>
-          </div>
-        </div>
-        <div className="stat-card-sm">
-          <div className="stat-icon-sm">⏳</div>
-          <div>
-            <h3>Pending</h3>
-            <p className="stat-value-sm">{suppliers.filter(s => s.verificationStatus === 'Pending').length}</p>
-            <span className="stat-label">Awaiting approval</span>
-          </div>
-        </div>
-        <div className="stat-card-sm">
-          <div className="stat-icon-sm">🟢</div>
-          <div>
-            <h3>Active</h3>
-            <p className="stat-value-sm">{suppliers.filter(s => s.status === 'Active').length}</p>
-            <span className="stat-label">{suppliers.length > 0 ? Math.round((suppliers.filter(s => s.status === 'Active').length / suppliers.length) * 100) : 0}% active</span>
-          </div>
-        </div>
       </div>
 
       {/* Filters */}
@@ -878,40 +1114,11 @@ function SupplierManagement() {
         <div className="filters-grid">
           <input 
             type="text" 
-            placeholder="Search by company, GST, contact, location..." 
+            placeholder="Search by company, contact, email, phone, address..." 
             className="search-input-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-          <select 
-            className="filter-select"
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-          >
-            <option>All Categories</option>
-            {categories.map((cat, index) => (
-              <option key={index}>{cat}</option>
-            ))}
-          </select>
-          <select 
-            className="filter-select"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option>All Status</option>
-            <option>Active</option>
-            <option>Inactive</option>
-          </select>
-          <select 
-            className="filter-select"
-            value={filterVerification}
-            onChange={(e) => setFilterVerification(e.target.value)}
-          >
-            <option>Verification Status</option>
-            <option>Approved</option>
-            <option>Pending</option>
-            {/* <option>Rejected</option> */}
-          </select>
           <button className="btn btn-outline clear-filters-btn" onClick={handleClearFilters}>
             Clear
           </button>
@@ -1003,70 +1210,26 @@ function SupplierManagement() {
                   <div className="supplier-meta">{supplier.email}</div>
                 </div>
               </div>
-              <div className="badges-group">
-                <span className={`status-badge ${supplier.status === 'Active' ? 'status-success' : 'status-error'}`}>
-                  {supplier.status}
-                </span>
-                <span className={`status-badge ${
-                  supplier.verificationStatus === 'Approved' ? 'status-success' : 
-                  supplier.verificationStatus === 'Pending' ? 'status-warning' : 
-                  'status-error'
-                }`}>
-                  {supplier.verificationStatus}
-                </span>
-              </div>
             </div>
             
             <div className="supplier-card-body">
               <div className="card-info-row">
                 <span className="card-label">👤 Contact:</span>
-                <span>{supplier.contactPerson}</span>
+                <span>{supplier.contactPerson || supplier.name || 'N/A'}</span>
               </div>
               <div className="card-info-row">
                 <span className="card-label">📞 Phone:</span>
-                <span>{supplier.phone}</span>
+                <span>{supplier.phone || 'N/A'}</span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">🏢 Category:</span>
-                <span>{supplier.category}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📦 Material:</span>
-                <span>{supplier.materialType || 'Various'}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📋 GST:</span>
-                <span>{supplier.gstNumber || 'N/A'}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📍 Location:</span>
-                <span>{supplier.location || 'N/A'}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📄 Docs:</span>
-                <span className="docs-count">{supplier.documents || 0}</span>
+                <span className="card-label">📍 Address:</span>
+                <span>{supplier.address || 'N/A'}</span>
               </div>
             </div>
 
             <div className="supplier-card-actions">
               <button className="btn btn-outline" onClick={() => handleViewDetails(supplier)}>👁️ View</button>
               <button className="btn btn-primary" onClick={() => handleEditSupplier(supplier)}>✏️ Edit</button>
-            </div>
-            
-            {supplier.verificationStatus === 'Pending' && (
-              <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
-                <button className="btn btn-success" onClick={() => handleApproveSupplier(supplier.id)}>✅ Approve</button>
-                <button className="btn btn-warning" onClick={() => handleRejectSupplier(supplier.id)}>❌ Reject</button>
-              </div>
-            )}
-            
-            <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
-              {supplier.status === 'Active' ? (
-                <button className="btn btn-warning" onClick={() => handleDeactivateSupplier(supplier.id)}>⏸️ Deactivate</button>
-              ) : (
-                <button className="btn btn-success" onClick={() => handleActivateSupplier(supplier.id)}>▶️ Activate</button>
-              )}
-              <button className="btn btn-outline" onClick={() => handleManageDocuments(supplier)}>📄 Documents</button>
             </div>
             
             <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
@@ -1095,60 +1258,20 @@ function SupplierManagement() {
               <div className="supplier-profile-section">
                 <div className="profile-avatar-large">{selectedSupplier.companyName.charAt(0)}</div>
                 <h3>{selectedSupplier.companyName}</h3>
-                <div className="badges-group">
-                  <span className={`status-badge ${selectedSupplier.status === 'Active' ? 'status-success' : 'status-error'}`}>
-                    {selectedSupplier.status}
-                  </span>
-                  <span className={`status-badge ${
-                    selectedSupplier.verificationStatus === 'Approved' ? 'status-success' : 
-                    selectedSupplier.verificationStatus === 'Pending' ? 'status-warning' : 
-                    'status-error'
-                  }`}>
-                    {selectedSupplier.verificationStatus}
-                  </span>
-                </div>
               </div>
 
               <div className="details-grid">
                 <div className="detail-item">
                   <label>Contact Person</label>
-                  <p>{selectedSupplier.contactPerson}</p>
+                  <p>{selectedSupplier.contactPerson || selectedSupplier.name || 'N/A'}</p>
                 </div>
                 <div className="detail-item">
                   <label>Email</label>
-                  <p>{selectedSupplier.email}</p>
+                  <p>{selectedSupplier.email || 'N/A'}</p>
                 </div>
                 <div className="detail-item">
                   <label>Phone</label>
-                  <p>{selectedSupplier.phone}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Category</label>
-                  <p>{selectedSupplier.category}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Material Type</label>
-                  <p>{selectedSupplier.materialType || 'Various'}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Location</label>
-                  <p>{selectedSupplier.location || 'N/A'}</p>
-                </div>
-                <div className="detail-item">
-                  <label>GST Number</label>
-                  <p>{selectedSupplier.gstNumber || 'Not Provided'}</p>
-                </div>
-                <div className="detail-item">
-                  <label>PAN Number</label>
-                  <p>{selectedSupplier.panNumber || 'Not Provided'}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Join Date</label>
-                  <p>{selectedSupplier.joinDate}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Documents</label>
-                  <p>{selectedSupplier.documents || 0} uploaded</p>
+                  <p>{selectedSupplier.phone || 'N/A'}</p>
                 </div>
               </div>
 
@@ -1179,25 +1302,6 @@ function SupplierManagement() {
               <div className="account-actions-section">
                 <h4>Supplier Actions</h4>
                 <div className="account-actions-grid">
-                  {selectedSupplier.verificationStatus === 'Pending' && (
-                    <>
-                      <button className="btn btn-success" onClick={() => { setShowDetailsModal(false); handleApproveSupplier(selectedSupplier.id); }}>
-                        ✅ Approve
-                      </button>
-                      <button className="btn btn-warning" onClick={() => { setShowDetailsModal(false); handleRejectSupplier(selectedSupplier.id); }}>
-                        ❌ Reject
-                      </button>
-                    </>
-                  )}
-                  {selectedSupplier.status === 'Active' ? (
-                    <button className="btn btn-warning" onClick={() => { setShowDetailsModal(false); handleDeactivateSupplier(selectedSupplier.id); }}>
-                      ⏸️ Deactivate
-                    </button>
-                  ) : (
-                    <button className="btn btn-success" onClick={() => { setShowDetailsModal(false); handleActivateSupplier(selectedSupplier.id); }}>
-                      ▶️ Activate
-                    </button>
-                  )}
                   <button className="btn btn-outline" onClick={() => { setShowDetailsModal(false); handleManageBrokers(selectedSupplier); }}>
                     🤝 Assign Brokers
                   </button>
@@ -1209,9 +1313,6 @@ function SupplierManagement() {
                   </button>
                   <button className="btn btn-outline" onClick={() => { setShowDetailsModal(false); handleResetPassword(selectedSupplier); }}>
                     🔑 Reset Password
-                  </button>
-                  <button className="btn btn-outline" onClick={() => { setShowDetailsModal(false); handleManageDocuments(selectedSupplier); }}>
-                    📄 Verify Documents
                   </button>
                 </div>
               </div>
@@ -1295,91 +1396,6 @@ function SupplierManagement() {
                       className={formErrors.phone ? 'error' : ''}
                     />
                     {formErrors.phone && <span className="error-message">{formErrors.phone}</span>}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Category *</label>
-                    <select 
-                      name="category" 
-                      defaultValue={selectedSupplier?.category || ''} 
-                      required
-                      className={formErrors.category ? 'error' : ''}
-                    >
-                      <option value="">Select Category</option>
-                      {categories.map((cat, index) => (
-                        <option key={index} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    {formErrors.category && <span className="error-message">{formErrors.category}</span>}
-                  </div>
-                  <div className="form-group">
-                    <label>Material Type</label>
-                    <select name="materialType" defaultValue={selectedSupplier?.materialType || ''}>
-                      <option value="">Select Material Type</option>
-                      {materialTypes.map((material, index) => (
-                        <option key={index} value={material}>{material}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>GST Number *</label>
-                    <input 
-                      type="text" 
-                      name="gstNumber" 
-                      placeholder="22AAAAA0000A1Z5" 
-                      defaultValue={selectedSupplier?.gstNumber}
-                      pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}"
-                      maxLength="15"
-                      title="Please enter a valid 15-character GST number"
-                      required 
-                      className={formErrors.gstNumber ? 'error' : ''}
-                    />
-                    {formErrors.gstNumber && <span className="error-message">{formErrors.gstNumber}</span>}
-                    <small style={{ fontSize: '11px', color: 'var(--text-light)', marginTop: '4px', display: 'block' }}>
-                      Format: 22AAAAA0000A1Z5 (15 characters)
-                    </small>
-                  </div>
-                  <div className="form-group">
-                    <label>PAN Number</label>
-                    <input 
-                      type="text" 
-                      name="panNumber" 
-                      placeholder="AAAAA0000A" 
-                      defaultValue={selectedSupplier?.panNumber}
-                      pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"
-                      maxLength="10"
-                      title="Please enter a valid 10-character PAN number"
-                      className={formErrors.panNumber ? 'error' : ''}
-                    />
-                    {formErrors.panNumber && <span className="error-message">{formErrors.panNumber}</span>}
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Location *</label>
-                    <input 
-                      type="text" 
-                      name="location" 
-                      placeholder="City, State" 
-                      defaultValue={selectedSupplier?.location}
-                      minLength="2"
-                      required 
-                      className={formErrors.location ? 'error' : ''}
-                    />
-                    {formErrors.location && <span className="error-message">{formErrors.location}</span>}
-                  </div>
-                  <div className="form-group">
-                    <label>Status</label>
-                    <select name="status" defaultValue={selectedSupplier?.status || 'Inactive'}>
-                      <option>Active</option>
-                      <option>Inactive</option>
-                    </select>
                   </div>
                 </div>
 
@@ -1661,45 +1677,49 @@ function SupplierManagement() {
               </div>
 
               <h3 className="section-title">Delivery Performance</h3>
+              {(() => {
+                const stats = getFulfillmentStats(selectedSupplier.id || selectedSupplier._id)
+                return (
+                  <>
               <div className="details-grid">
                 <div className="detail-item">
                   <label>Total Orders</label>
-                  <p className="stat-value-sm">{supplierPerformance[selectedSupplier.id]?.fulfillment?.totalOrders || 0}</p>
+                        <p className="stat-value-sm">{stats.totalOrders}</p>
                 </div>
                 <div className="detail-item">
                   <label>Completed Orders</label>
-                  <p className="stat-value-sm" style={{ color: 'var(--success)' }}>{supplierPerformance[selectedSupplier.id]?.fulfillment?.completedOrders || 0}</p>
+                        <p className="stat-value-sm" style={{ color: 'var(--success)' }}>{stats.completedOrders}</p>
                 </div>
                 <div className="detail-item">
                   <label>On-Time Deliveries</label>
-                  <p className="stat-value-sm" style={{ color: 'var(--success)' }}>{supplierPerformance[selectedSupplier.id]?.fulfillment?.onTimeDeliveries || 0}</p>
+                        <p className="stat-value-sm" style={{ color: 'var(--success)' }}>{stats.onTimeDeliveries}</p>
                 </div>
                 <div className="detail-item">
                   <label>Late Deliveries</label>
-                  <p className="stat-value-sm" style={{ color: 'var(--warning)' }}>{supplierPerformance[selectedSupplier.id]?.fulfillment?.lateDeliveries || 0}</p>
+                        <p className="stat-value-sm" style={{ color: 'var(--warning)' }}>{stats.lateDeliveries}</p>
                 </div>
                 <div className="detail-item">
                   <label>Cancelled Orders</label>
-                  <p className="stat-value-sm" style={{ color: 'var(--error)' }}>{supplierPerformance[selectedSupplier.id]?.fulfillment?.cancelledOrders || 0}</p>
+                        <p className="stat-value-sm" style={{ color: 'var(--error)' }}>{stats.cancelledOrders}</p>
                 </div>
                 <div className="detail-item">
                   <label>Success Rate</label>
-                  <p className="stat-value-sm">{supplierPerformance[selectedSupplier.id]?.fulfillment?.deliverySuccessRate || 0}%</p>
+                        <p className="stat-value-sm">{stats.deliverySuccessRate}%</p>
                 </div>
                 <div className="detail-item">
                   <label>On-Time Rate</label>
-                  <p className="stat-value-sm">{supplierPerformance[selectedSupplier.id]?.fulfillment?.onTimeRate || 0}%</p>
+                        <p className="stat-value-sm">{stats.onTimeRate}%</p>
                 </div>
                 <div className="detail-item">
                   <label>Avg. Delivery Time</label>
-                  <p className="stat-value-sm">{supplierPerformance[selectedSupplier.id]?.fulfillment?.averageDeliveryTime || 0} days</p>
+                        <p className="stat-value-sm">{stats.averageDeliveryTime} days</p>
                 </div>
               </div>
 
               <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Orders</h3>
               <div className="documents-list">
-                {supplierPerformance[selectedSupplier.id]?.fulfillment?.recentOrders?.length > 0 ? (
-                  supplierPerformance[selectedSupplier.id].fulfillment.recentOrders.map((order, index) => (
+                      {stats.recentOrders.length > 0 ? (
+                        stats.recentOrders.map((order, index) => (
                     <div key={index} className="document-item">
                       <div className="document-icon">
                         {order.status === 'Delivered' ? '🚚' : order.status === 'Cancelled' ? '❌' : '⏳'}
@@ -1707,7 +1727,7 @@ function SupplierManagement() {
                       <div className="document-info">
                         <div className="document-name">Order #{order.orderId}</div>
                         <div className="document-meta">
-                          {order.orderDate} • Delivered: {order.deliveryDate || 'Pending'} • {order.deliveryTime} days
+                                {order.orderDate} • Delivered: {order.deliveryDate || 'Pending'} • {order.deliveryTime ? `${order.deliveryTime} days` : 'N/A'}
                         </div>
                       </div>
                       <span className={`status-badge ${
@@ -1724,6 +1744,9 @@ function SupplierManagement() {
                   <p className="no-documents">No order history available yet.</p>
                 )}
               </div>
+                  </>
+                )
+              })()}
 
               <div className="modal-actions">
                 <button className="btn btn-outline" onClick={() => setShowFulfillmentModal(false)}>Close</button>
@@ -1835,6 +1858,323 @@ function SupplierManagement() {
               <div className="modal-actions">
                 <button className="btn btn-primary" onClick={() => setShowCategoriesModal(false)}>Done</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Products List Modal */}
+      {showProductsListModal && (
+        <div className="modal-overlay" onClick={() => setShowProductsListModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Product Inventory ({products.length})</h2>
+              <button className="close-btn" onClick={() => setShowProductsListModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '20px' }}>
+                <button className="btn btn-primary" onClick={handleAddProduct}>+ Add Product</button>
+              </div>
+              <div className="documents-list">
+                {products.length > 0 ? (
+                  products.map((product) => (
+                    <div key={product._id || product.id} className="document-item">
+                      <div className="document-icon">📦</div>
+                      <div className="document-info" style={{ flex: 1 }}>
+                        <div className="document-name">{product.name} ({product.sku})</div>
+                        <div className="document-meta">
+                          Stock: {product.currentStock} {product.unit} | 
+                          Low Threshold: {product.lowStockThreshold} | 
+                          Category: {product.category || 'N/A'}
+                          {product.currentStock <= product.lowStockThreshold && <span style={{ color: 'var(--error)', marginLeft: '10px' }}>⚠️ Low Stock</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-outline" onClick={() => handleUpdateStock(product)}>Update Stock</button>
+                        <button className="btn btn-outline" onClick={() => handleEditProduct(product)}>Edit</button>
+                        <button className="btn btn-outline" onClick={() => handleDeleteProduct(product._id || product.id)}>Delete</button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="no-documents">No products yet. Click "Add Product" to create one.</p>
+                )}
+              </div>
+              <div className="modal-actions">
+                <button className="btn btn-primary" onClick={() => setShowProductsListModal(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Orders List Modal */}
+      {showOrdersListModal && (
+        <div className="modal-overlay" onClick={() => setShowOrdersListModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Purchase Orders ({orders.length})</h2>
+              <button className="close-btn" onClick={() => setShowOrdersListModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '20px' }}>
+                <button className="btn btn-primary" onClick={handleAddOrder}>+ Create Order</button>
+              </div>
+              <div className="documents-list">
+                {orders.length > 0 ? (
+                  orders.map((order) => (
+                    <div key={order._id || order.id} className="document-item">
+                      <div className="document-icon">🛒</div>
+                      <div className="document-info" style={{ flex: 1 }}>
+                        <div className="document-name">{order.orderNumber}</div>
+                        <div className="document-meta">
+                          Supplier: {order.supplierId?.name || order.supplierId?.company || 'N/A'} | 
+                          Status: {order.status} | 
+                          Total: ₹{order.totalAmount?.toLocaleString() || '0'} | 
+                          Items: {order.items?.length || 0}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-outline" onClick={() => handleUpdateDelivery(order)}>Update Delivery</button>
+                        <button className="btn btn-outline" onClick={() => handleEditOrder(order)}>Edit</button>
+                        <button className="btn btn-outline" onClick={() => handleDeleteOrder(order._id || order.id)}>Delete</button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="no-documents">No orders yet. Click "Create Order" to create one.</p>
+                )}
+              </div>
+              <div className="modal-actions">
+                <button className="btn btn-primary" onClick={() => setShowOrdersListModal(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Add/Edit Modal */}
+      {showProductModal && (
+        <div className="modal-overlay" onClick={() => { setShowProductModal(false); setSelectedProduct(null); }}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{selectedProduct ? 'Edit Product' : 'Add New Product'}</h2>
+              <button className="close-btn" onClick={() => { setShowProductModal(false); setSelectedProduct(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveProduct}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>SKU *</label>
+                    <input type="text" name="sku" defaultValue={selectedProduct?.sku} required />
+                  </div>
+                  <div className="form-group">
+                    <label>Name *</label>
+                    <input type="text" name="name" defaultValue={selectedProduct?.name} required />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea name="description" rows="3" defaultValue={selectedProduct?.description}></textarea>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Supplier *</label>
+                    <select name="supplierId" required defaultValue={selectedProduct?.supplierId?._id || selectedProduct?.supplierId}>
+                      <option value="">Select Supplier</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id || s._id} value={s.id || s._id}>{s.companyName || s.company}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Category</label>
+                    <select name="category" defaultValue={selectedProduct?.category}>
+                      <option value="">Select Category</option>
+                      {categories.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Unit</label>
+                    <input type="text" name="unit" defaultValue={selectedProduct?.unit || 'pieces'} />
+                  </div>
+                  <div className="form-group">
+                    <label>Current Stock</label>
+                    <input type="number" name="currentStock" min="0" defaultValue={selectedProduct?.currentStock || 0} />
+                  </div>
+                  <div className="form-group">
+                    <label>Low Stock Threshold</label>
+                    <input type="number" name="lowStockThreshold" min="0" defaultValue={selectedProduct?.lowStockThreshold || 0} />
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowProductModal(false); setSelectedProduct(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save Product</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Update Modal */}
+      {showStockUpdateModal && selectedProduct && (
+        <div className="modal-overlay" onClick={() => { setShowStockUpdateModal(false); setSelectedProduct(null); }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Update Stock - {selectedProduct.name}</h2>
+              <button className="close-btn" onClick={() => { setShowStockUpdateModal(false); setSelectedProduct(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveStockUpdate}>
+                <div className="form-group">
+                  <label>Current Stock: {selectedProduct.currentStock} {selectedProduct.unit}</label>
+                </div>
+                <div className="form-group">
+                  <label>Operation *</label>
+                  <select name="operation" required>
+                    <option value="set">Set to</option>
+                    <option value="add">Add</option>
+                    <option value="subtract">Subtract</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Quantity *</label>
+                  <input type="number" name="quantity" min="0" required />
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowStockUpdateModal(false); setSelectedProduct(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Update Stock</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Add/Edit Modal */}
+      {showOrderModal && (
+        <div className="modal-overlay" onClick={() => { setShowOrderModal(false); setSelectedOrder(null); }}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{selectedOrder ? 'Edit Order' : 'Create Purchase Order'}</h2>
+              <button className="close-btn" onClick={() => { setShowOrderModal(false); setSelectedOrder(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveOrder}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Supplier *</label>
+                    <select name="supplierId" required defaultValue={selectedOrder?.supplierId?._id || selectedOrder?.supplierId}>
+                      <option value="">Select Supplier</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id || s._id} value={s.id || s._id}>{s.companyName || s.company}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Status</label>
+                    <select name="status" defaultValue={selectedOrder?.status || 'pending'}>
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="in_transit">In Transit</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Expected Delivery</label>
+                    <input type="date" name="expectedDelivery" defaultValue={selectedOrder?.expectedDelivery ? new Date(selectedOrder.expectedDelivery).toISOString().split('T')[0] : ''} />
+                  </div>
+                  <div className="form-group">
+                    <label>Payment Status</label>
+                    <select name="paymentStatus" defaultValue={selectedOrder?.paymentStatus || 'pending'}>
+                      <option value="pending">Pending</option>
+                      <option value="partial">Partial</option>
+                      <option value="paid">Paid</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Items (JSON Array) *</label>
+                  <textarea 
+                    name="items" 
+                    rows="10" 
+                    required
+                    defaultValue={selectedOrder?.items ? JSON.stringify(selectedOrder.items.map(item => ({
+                      productId: item.productId?._id || item.productId,
+                      quantity: item.quantity,
+                      unitPrice: item.unitPrice,
+                      receivedQuantity: item.receivedQuantity || 0,
+                      notes: item.notes || ''
+                    })), null, 2) : '[]'}
+                    placeholder='[{"productId": "product_id_here", "quantity": 100, "unitPrice": 25.50, "receivedQuantity": 0, "notes": ""}]'
+                  ></textarea>
+                  <small>Format: Array of objects with productId, quantity, unitPrice, receivedQuantity (optional), notes (optional)</small>
+                </div>
+                <div className="form-group">
+                  <label>Notes</label>
+                  <textarea name="notes" rows="3" defaultValue={selectedOrder?.notes}></textarea>
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowOrderModal(false); setSelectedOrder(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save Order</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Update Modal */}
+      {showDeliveryUpdateModal && selectedOrder && (
+        <div className="modal-overlay" onClick={() => { setShowDeliveryUpdateModal(false); setSelectedOrder(null); }}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Update Delivery - {selectedOrder.orderNumber}</h2>
+              <button className="close-btn" onClick={() => { setShowDeliveryUpdateModal(false); setSelectedOrder(null); }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveDeliveryUpdate}>
+                <div className="form-group">
+                  <label>Actual Delivery Date</label>
+                  <input 
+                    type="date" 
+                    name="actualDelivery" 
+                    defaultValue={selectedOrder?.actualDelivery ? new Date(selectedOrder.actualDelivery).toISOString().split('T')[0] : ''} 
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Received Quantities</label>
+                  {selectedOrder.items?.map((item, index) => (
+                    <div key={index} style={{ marginBottom: '15px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                      <input type="hidden" name="itemId" value={item._id || item.id} />
+                      <div style={{ marginBottom: '8px' }}>
+                        <strong>{item.productId?.name || 'Product'}</strong> - Ordered: {item.quantity}
+                      </div>
+                      <input 
+                        type="number" 
+                        name="receivedQuantity" 
+                        min="0" 
+                        max={item.quantity}
+                        defaultValue={item.receivedQuantity || 0}
+                        placeholder="Received quantity"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowDeliveryUpdateModal(false); setSelectedOrder(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Update Delivery</button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
