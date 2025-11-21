@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react';
+import { ORDER_STATUS, PAYMENT_STATUS, ORDER_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS } from '../../constants/orderConstants';
 import './OrderManagement.css'
 import {
   flexRender,
@@ -101,10 +102,12 @@ function OrderManagement() {
         filterSupplier === 'All Suppliers' || supplierName === filterSupplier
 
       const matchesStatus = 
-        filterStatus === 'All Status' || order.status === filterStatus.toLowerCase().replace(' ', '_')
+        filterStatus === 'All Status' || 
+        order.status === filterStatus.toLowerCase()
 
       const matchesPaymentStatus = 
-        filterPaymentStatus === 'All Payment Status' || order.paymentStatus === filterPaymentStatus.toLowerCase()
+        filterPaymentStatus === 'All Payment Status' || 
+        order.paymentStatus === filterPaymentStatus.toLowerCase()
 
       return matchesSearch && matchesSupplier && matchesStatus && matchesPaymentStatus
     })
@@ -134,19 +137,34 @@ function OrderManagement() {
   const handleSaveOrder = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
-    let items = []
-    try {
-      items = JSON.parse(formData.get('items') || '[]')
-    } catch (err) {
-      showNotification('Invalid items JSON format', 'error')
+    
+    // Get the items from the hidden input which is already in JSON format
+    const items = selectedOrder?.items || []
+    
+    if (items.length === 0) {
+      showNotification('Please add at least one item to the order', 'error')
       return
     }
     
+    // Validate all items have required fields
+    const invalidItems = items.some(item => !item.productId || !item.quantity || item.quantity <= 0 || !item.unitPrice || item.unitPrice < 0)
+    if (invalidItems) {
+      showNotification('Please fill all required fields for all items', 'error')
+      return
+    }
+    
+    // Format the order data
     const orderData = {
       supplierId: formData.get('supplierId'),
       status: formData.get('status') || 'pending',
       expectedDelivery: formData.get('expectedDelivery') || undefined,
-      items: items,
+      items: items.map(item => ({
+        productId: item.productId,
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+        receivedQuantity: Number(item.receivedQuantity || 0),
+        notes: item.notes || ''
+      })),
       paymentStatus: formData.get('paymentStatus') || 'pending',
       notes: formData.get('notes')
     }
@@ -461,11 +479,11 @@ function OrderManagement() {
             onChange={(e) => setFilterStatus(e.target.value)}
           >
             <option>All Status</option>
-            <option>Pending</option>
-            <option>Confirmed</option>
-            <option>In Transit</option>
-            <option>Delivered</option>
-            <option>Cancelled</option>
+            {ORDER_STATUS_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
           <select 
             className="filter-select"
@@ -473,10 +491,11 @@ function OrderManagement() {
             onChange={(e) => setFilterPaymentStatus(e.target.value)}
           >
             <option>All Payment Status</option>
-            <option>Pending</option>
-            <option>Partial</option>
-            <option>Paid</option>
-            <option>Overdue</option>
+            {PAYMENT_STATUS_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -566,12 +585,12 @@ function OrderManagement() {
                   </div>
                   <div className="form-group">
                     <label>Status</label>
-                    <select name="status" defaultValue={selectedOrder?.status || 'pending'}>
-                      <option value="pending">Pending</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="in_transit">In Transit</option>
-                      <option value="delivered">Delivered</option>
-                      <option value="cancelled">Cancelled</option>
+                    <select name="status" defaultValue={selectedOrder?.status || ORDER_STATUS.PLACED}>
+                      {ORDER_STATUS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -582,30 +601,193 @@ function OrderManagement() {
                   </div>
                   <div className="form-group">
                     <label>Payment Status</label>
-                    <select name="paymentStatus" defaultValue={selectedOrder?.paymentStatus || 'pending'}>
-                      <option value="pending">Pending</option>
-                      <option value="partial">Partial</option>
-                      <option value="paid">Paid</option>
-                      <option value="overdue">Overdue</option>
+                    <select name="paymentStatus" defaultValue={selectedOrder?.paymentStatus || PAYMENT_STATUS.PENDING}>
+                      {PAYMENT_STATUS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Items (JSON Array) *</label>
-                  <textarea 
-                    name="items" 
-                    rows="10" 
-                    required
-                    defaultValue={selectedOrder?.items ? JSON.stringify(selectedOrder.items.map(item => ({
-                      productId: item.productId?._id || item.productId,
-                      quantity: item.quantity,
-                      unitPrice: item.unitPrice,
-                      receivedQuantity: item.receivedQuantity || 0,
-                      notes: item.notes || ''
-                    })), null, 2) : '[]'}
-                    placeholder='[{"productId": "product_id_here", "quantity": 100, "unitPrice": 25.50, "receivedQuantity": 0, "notes": ""}]'
-                  ></textarea>
-                  <small>Format: Array of objects with productId, quantity, unitPrice, receivedQuantity (optional), notes (optional)</small>
+                  <div className="flex justify-between items-center mb-3">
+                    <label>Order Items *</label>
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-outline"
+                      onClick={() => {
+                        const newItem = {
+                          productId: '',
+                          quantity: 1,
+                          unitPrice: 0,
+                          receivedQuantity: 0,
+                          notes: ''
+                        };
+                        setSelectedOrder(prev => ({
+                          ...prev,
+                          items: [...(prev?.items || []), newItem]
+                        }));
+                      }}
+                    >
+                      + Add Item
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {selectedOrder?.items?.map((item, index) => {
+                      const product = products.find(p => (p._id || p.id) === (item.productId?._id || item.productId));
+                      return (
+                        <div key={index} className="item-card relative p-4">
+                          <button 
+                            type="button"
+                            className="absolute top-2 right-2 text-red-500 hover:text-red-700"
+                            onClick={() => {
+                              setSelectedOrder(prev => ({
+                                ...prev,
+                                items: prev.items.filter((_, i) => i !== index)
+                              }));
+                            }}
+                          >
+                            ×
+                          </button>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="form-group">
+                              <label>Product *</label>
+                              <select
+                                className="w-full"
+                                value={item.productId?._id || item.productId || ''}
+                                onChange={(e) => {
+                                  const newItems = [...selectedOrder.items];
+                                  newItems[index] = {
+                                    ...newItems[index],
+                                    productId: e.target.value,
+                                    unitPrice: products.find(p => (p._id || p.id) === e.target.value)?.price || 0
+                                  };
+                                  setSelectedOrder(prev => ({
+                                    ...prev,
+                                    items: newItems
+                                  }));
+                                }}
+                                required
+                              >
+                                <option value="">Select Product</option>
+                                {products.map((product) => (
+                                  <option key={product._id || product.id} value={product._id || product.id}>
+                                    {product.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            
+                            <div className="form-group">
+                              <label>Quantity *</label>
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full"
+                                value={item.quantity || ''}
+                                onChange={(e) => {
+                                  const newItems = [...selectedOrder.items];
+                                  newItems[index] = {
+                                    ...newItems[index],
+                                    quantity: parseInt(e.target.value) || 0
+                                  };
+                                  setSelectedOrder(prev => ({
+                                    ...prev,
+                                    items: newItems
+                                  }));
+                                }}
+                                required
+                              />
+                            </div>
+                            
+                            <div className="form-group">
+                              <label>Unit Price *</label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="w-full pl-8"
+                                  value={item.unitPrice || ''}
+                                  onChange={(e) => {
+                                    const newItems = [...selectedOrder.items];
+                                    newItems[index] = {
+                                      ...newItems[index],
+                                      unitPrice: parseFloat(e.target.value) || 0
+                                    };
+                                    setSelectedOrder(prev => ({
+                                      ...prev,
+                                      items: newItems
+                                    }));
+                                  }}
+                                  required
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="form-group">
+                              <label>Received Quantity</label>
+                              <input
+                                type="number"
+                                min="0"
+                                className="w-full"
+                                value={item.receivedQuantity || ''}
+                                onChange={(e) => {
+                                  const newItems = [...selectedOrder.items];
+                                  newItems[index] = {
+                                    ...newItems[index],
+                                    receivedQuantity: parseInt(e.target.value) || 0
+                                  };
+                                  setSelectedOrder(prev => ({
+                                    ...prev,
+                                    items: newItems
+                                  }));
+                                }}
+                              />
+                            </div>
+                            
+                            <div className="form-group md:col-span-2">
+                              <label>Notes</label>
+                              <input
+                                type="text"
+                                className="w-full"
+                                value={item.notes || ''}
+                                onChange={(e) => {
+                                  const newItems = [...selectedOrder.items];
+                                  newItems[index] = {
+                                    ...newItems[index],
+                                    notes: e.target.value
+                                  };
+                                  setSelectedOrder(prev => ({
+                                    ...prev,
+                                    items: newItems
+                                  }));
+                                }}
+                                placeholder="Any additional notes"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    
+                    {(!selectedOrder?.items || selectedOrder.items.length === 0) && (
+                      <div className="text-center py-8 border-2 border-dashed rounded-lg text-muted-foreground">
+                        <p>No items added yet. Click "Add Item" to get started.</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Hidden input to maintain form submission compatibility */}
+                  <input
+                    type="hidden"
+                    name="items"
+                    value={JSON.stringify(selectedOrder?.items || [])}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Notes</label>
@@ -656,17 +838,49 @@ function OrderManagement() {
                   <p>{selectedOrder.actualDelivery ? new Date(selectedOrder.actualDelivery).toLocaleDateString() : 'N/A'}</p>
                 </div>
               </div>
-              <h3 className="section-title">Items</h3>
+              <h3 className="section-title">Order Items</h3>
               <div className="items-list">
                 {selectedOrder.items?.map((item, index) => {
-                  const product = products.find(p => (p._id || p.id) === (item.productId?._id || item.productId))
+                  const product = products.find(p => (p._id || p.id) === (item.productId?._id || item.productId));
+                  const totalAmount = item.quantity * item.unitPrice;
+                  const isFullyReceived = item.receivedQuantity >= item.quantity;
+                  const isPartiallyReceived = item.receivedQuantity > 0 && item.receivedQuantity < item.quantity;
+                  const status = isFullyReceived ? 'completed' : (isPartiallyReceived ? 'partial' : 'pending');
+                  
                   return (
-                    <div key={index} className="item-row">
-                      <div>{product?.name || 'Product'}</div>
-                      <div>Qty: {item.quantity} | Received: {item.receivedQuantity || 0}</div>
-                      <div>Price: ₹{item.unitPrice} | Total: ₹{(item.quantity * item.unitPrice).toLocaleString()}</div>
+                    <div key={index} className="item-card">
+                      <div className="item-card-header">
+                        <h3 className="item-name">{product?.name || 'Unnamed Product'}</h3>
+                        <span className={`item-status ${status}`}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </span>
+                      </div>
+                      <div className="item-details">
+                        <div className="detail-row">
+                          <span className="detail-label">Quantity:</span>
+                          <span>{item.quantity} {product?.unit || 'units'}</span>
+                        </div>
+                        <div className="detail-row">
+                          <span className="detail-label">Received:</span>
+                          <span>{item.receivedQuantity || 0} {product?.unit || 'units'}</span>
+                        </div>
+                        <div className="detail-row">
+                          <span className="detail-label">Unit Price:</span>
+                          <span>₹{item.unitPrice?.toLocaleString() || '0.00'}</span>
+                        </div>
+                        <div className="detail-row" style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed hsl(var(--border))' }}>
+                          <span className="detail-label" style={{ fontWeight: '600' }}>Total:</span>
+                          <span style={{ fontWeight: '600', color: 'hsl(var(--primary))' }}>₹{totalAmount.toLocaleString()}</span>
+                        </div>
+                        {item.notes && (
+                          <div className="detail-row" style={{ marginTop: '8px', fontStyle: 'italic' }}>
+                            <span className="detail-label">Notes:</span>
+                            <span>{item.notes}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )
+                  );
                 })}
               </div>
               <div className="modal-actions">
