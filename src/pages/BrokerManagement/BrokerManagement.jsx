@@ -1,6 +1,21 @@
 import { useState, useMemo, useEffect } from 'react'
 import './BrokerManagement.css'
 import {
+  User,
+  Mail,
+  Phone,
+  Building2,
+  Briefcase,
+  Award,
+  DollarSign,
+  Calendar,
+  FileText,
+  Users,
+  MapPin,
+  Hash,
+  Edit
+} from 'lucide-react'
+import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -8,7 +23,6 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -19,14 +33,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
@@ -37,10 +43,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000
 function BrokerManagement() {
   const [showBrokerModal, setShowBrokerModal] = useState(false)
   const [selectedBroker, setSelectedBroker] = useState(null)
-  const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [modalMode, setModalMode] = useState('view') // 'view', 'edit', or 'create'
   const [showDocumentsModal, setShowDocumentsModal] = useState(false)
   const [showNotificationsModal, setShowNotificationsModal] = useState(false)
   const [showAssignmentModal, setShowAssignmentModal] = useState(false)
+  const [showCommissionModal, setShowCommissionModal] = useState(false)
   const [openDropdownId, setOpenDropdownId] = useState(null)
 
   // Form Validation States
@@ -48,8 +55,6 @@ function BrokerManagement() {
 
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
-  const [filterStatus, setFilterStatus] = useState('All Status')
-  const [filterPerformance, setFilterPerformance] = useState('Performance')
   const [sortBy, setSortBy] = useState('Sort By')
   const [notification, setNotification] = useState(null)
 
@@ -236,9 +241,6 @@ function BrokerManagement() {
               commission: broker.commission || 'N/A',
               performance: broker.performance || 'Good',
               clientsManaged: clientsCount, // Use actual count from API
-              bidsSubmitted: broker.bidsSubmitted || 0,
-              successfulDeals: broker.successfulDeals || 0,
-              poCount: broker.poCount || 0,
               joinDate: broker.createdAt 
                 ? new Date(broker.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                 : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -284,28 +286,18 @@ function BrokerManagement() {
         (broker.email && broker.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (broker.phone && broker.phone.toString().includes(searchQuery))
 
-      // Status filter
-      const matchesStatus = 
-        filterStatus === 'All Status' || broker.status === filterStatus
-
-      // Performance filter
-      const matchesPerformance = 
-        filterPerformance === 'Performance' || broker.performance === filterPerformance
-
-      return matchesSearch && matchesStatus && matchesPerformance
+      return matchesSearch
     })
 
     // Sorting
-    if (sortBy === 'Most Deals') {
-      filtered.sort((a, b) => b.successfulDeals - a.successfulDeals)
-    } else if (sortBy === 'Most Clients') {
+    if (sortBy === 'Most Clients') {
       filtered.sort((a, b) => b.clientsManaged - a.clientsManaged)
     } else if (sortBy === 'Newest First') {
       filtered.sort((a, b) => new Date(b.joinDate) - new Date(a.joinDate))
     }
 
     return filtered
-  }, [brokers, searchQuery, filterStatus, filterPerformance, sortBy])
+  }, [brokers, searchQuery, sortBy])
 
   // Table state
   const [sorting, setSorting] = useState([])
@@ -314,7 +306,8 @@ function BrokerManagement() {
 
   const handleViewDetails = (broker) => {
     setSelectedBroker(broker)
-    setShowDetailsModal(true)
+    setModalMode('view')
+    setShowBrokerModal(true)
     // Fetch broker clients when viewing details
     if (broker.id) {
       fetchBrokerClients(broker.id)
@@ -323,7 +316,21 @@ function BrokerManagement() {
 
   const handleEditBroker = (broker) => {
     setSelectedBroker(broker)
+    setModalMode('edit')
     setShowBrokerModal(true)
+  }
+
+  const handleCreateBroker = () => {
+    setSelectedBroker(null)
+    setModalMode('create')
+    setShowBrokerModal(true)
+  }
+
+  const handleCloseModal = () => {
+    setShowBrokerModal(false)
+    setSelectedBroker(null)
+    setModalMode('view')
+    setFormErrors({})
   }
 
   const handleSaveBroker = async (e) => {
@@ -358,9 +365,6 @@ function BrokerManagement() {
       address: formData.get('address').trim(),
       notes: formData.get('notes').trim(),
       clientsManaged: selectedBroker ? selectedBroker.clientsManaged : 0,
-      bidsSubmitted: selectedBroker ? selectedBroker.bidsSubmitted : 0,
-      successfulDeals: selectedBroker ? selectedBroker.successfulDeals : 0,
-      poCount: selectedBroker ? selectedBroker.poCount : 0,
       documents: selectedBroker ? selectedBroker.documents : 0
     }
 
@@ -393,8 +397,7 @@ function BrokerManagement() {
       
       if (data.success) {
         showNotification(selectedBroker ? 'Broker updated successfully!' : 'Broker created successfully!', 'success')
-        setShowBrokerModal(false)
-        setSelectedBroker(null)
+        handleCloseModal()
         
         // Refresh brokers list
         const fetchResponse = await fetch(`${API_BASE_URL}/brokers`)
@@ -411,9 +414,6 @@ function BrokerManagement() {
             commission: broker.commission || 'N/A',
             performance: broker.performance || 'Good',
             clientsManaged: broker.clientsManaged || 0,
-            bidsSubmitted: broker.bidsSubmitted || 0,
-            successfulDeals: broker.successfulDeals || 0,
-            poCount: broker.poCount || 0,
             joinDate: broker.createdAt 
               ? new Date(broker.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
               : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -516,8 +516,6 @@ function BrokerManagement() {
 
   const handleClearFilters = () => {
     setSearchQuery('')
-    setFilterStatus('All Status')
-    setFilterPerformance('Performance')
     setSortBy('Sort By')
     showNotification('Filters cleared!', 'info')
   }
@@ -587,6 +585,58 @@ function BrokerManagement() {
   const handleManageAssignments = (broker) => {
     setSelectedBroker(broker)
     setShowAssignmentModal(true)
+  }
+
+  const handleManageCommission = (broker) => {
+    setSelectedBroker(broker)
+    setShowCommissionModal(true)
+  }
+
+  const handleSaveCommission = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const commission = formData.get('commission').trim()
+    
+    // Validate commission format
+    if (!commission) {
+      showNotification('Please enter a commission rate', 'error')
+      return
+    }
+
+    // Validate commission is a valid number/percentage
+    const commissionMatch = commission.match(/^(\d+(?:\.\d{1,2})?)%?$/)
+    if (!commissionMatch) {
+      showNotification('Please enter a valid commission rate (e.g., 2.5% or 2.5)', 'error')
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/brokers/${selectedBroker.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ commission: commission })
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        // Update local state
+        setBrokers(brokers.map(b => 
+          b.id === selectedBroker.id 
+            ? { ...b, commission: commission }
+            : b
+        ))
+        showNotification(`Commission updated for ${selectedBroker.name}!`, 'success')
+        setShowCommissionModal(false)
+        setSelectedBroker(null)
+      } else {
+        showNotification('Error: ' + (data.error || 'Failed to update commission'), 'error')
+      }
+    } catch (err) {
+      console.error('Error updating commission:', err)
+      showNotification('Error updating commission: ' + err.message, 'error')
+    }
   }
 
   const handleSaveAssignments = (e) => {
@@ -816,18 +866,22 @@ Date: ${new Date().toLocaleString()}`
       },
     },
     {
-      accessorKey: "status",
+      accessorKey: "company",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Status" />
+        <DataTableColumnHeader column={column} title="Company" />
       ),
-      cell: ({ row }) => {
-        const broker = row.original
-        return (
-          <span className={`status-badge ${broker.status === 'Active' ? 'status-success' : 'status-error'}`}>
-            {broker.status || 'Inactive'}
-          </span>
-        )
-      },
+      cell: ({ row }) => (
+        <span>{row.original.company || 'N/A'}</span>
+      ),
+    },
+    {
+      accessorKey: "licenseNumber",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="License Number" />
+      ),
+      cell: ({ row }) => (
+        <span>{row.original.licenseNumber || 'N/A'}</span>
+      ),
     },
     {
       accessorKey: "clientsManaged",
@@ -836,31 +890,6 @@ Date: ${new Date().toLocaleString()}`
       ),
       cell: ({ row }) => (
         <span className="metric-value">{row.original.clientsManaged || 0}</span>
-      ),
-    },
-    {
-      id: "bidsDeals",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Bids / Deals" />
-      ),
-      cell: ({ row }) => {
-        const broker = row.original
-        return (
-          <div className="bids-deals">
-            <span className="metric-value">{broker.bidsSubmitted || 0}</span>
-            <span className="separator">/</span>
-            <span className="metric-value success">{broker.successfulDeals || 0}</span>
-          </div>
-        )
-      },
-    },
-    {
-      accessorKey: "poCount",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="PO Count" />
-      ),
-      cell: ({ row }) => (
-        <span className="metric-value">{row.original.poCount || 0}</span>
       ),
     },
     {
@@ -873,61 +902,21 @@ Date: ${new Date().toLocaleString()}`
       ),
     },
     {
-      accessorKey: "performance",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Performance" />
-      ),
-      cell: ({ row }) => {
-        const broker = row.original
-        return (
-          <span className={`performance-badge ${getPerformanceColor(broker.performance || 'Average')}`}>
-            {broker.performance || 'Average'}
-          </span>
-        )
-      },
-    },
-    {
       id: "actions",
       enableHiding: false,
       cell: ({ row }) => {
         const broker = row.original
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => handleViewDetails(broker)}>
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleEditBroker(broker)}>
-                Edit Broker
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleManageAssignments(broker)}>
-                Assign Buyers/Suppliers
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleToggleStatus(broker.id, broker.status)}>
-                {broker.status === 'Active' ? 'Deactivate' : 'Activate'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleManageDocuments(broker)}>
-                Manage Documents
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleManageNotifications(broker)}>
-                Send Notification
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleResetPassword(broker)}>
-                Reset Password
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleDeleteBroker(broker.id)}>
-                Delete Broker
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleEditBroker(broker)
+            }}
+          >
+            Edit
+          </Button>
         )
       },
     },
@@ -957,7 +946,7 @@ Date: ${new Date().toLocaleString()}`
           <h1 className="page-title-main">Broker Management</h1>
           <p className="page-subtitle">Manage broker accounts and track their performance</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setSelectedBroker(null); setShowBrokerModal(true); }}>
+        <button className="btn btn-primary" onClick={handleCreateBroker}>
           + Create New Broker
         </button>
       </div>
@@ -980,22 +969,6 @@ Date: ${new Date().toLocaleString()}`
             <span className="stat-label">{brokers.length > 0 ? Math.round((brokers.filter(b => b.status === 'Active').length / brokers.length) * 100) : 0}% active rate</span>
           </div>
         </div>
-        <div className="stat-card-bm">
-          <div className="stat-icon-bm">🎯</div>
-          <div>
-            <h3>Total Deals</h3>
-            <p className="stat-value-bm">{brokers.reduce((sum, b) => sum + (b.successfulDeals || 0), 0)}</p>
-            <span className="stat-label">All time</span>
-          </div>
-        </div>
-        <div className="stat-card-bm">
-          <div className="stat-icon-bm">📋</div>
-          <div>
-            <h3>Purchase Orders</h3>
-            <p className="stat-value-bm">{brokers.reduce((sum, b) => sum + (b.poCount || 0), 0)}</p>
-            <span className="stat-label">Total POs</span>
-          </div>
-        </div>
       </div>
 
       {/* Filters */}
@@ -1010,31 +983,10 @@ Date: ${new Date().toLocaleString()}`
           />
           <select 
             className="filter-select"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option>All Status</option>
-            <option>Active</option>
-            <option>Inactive</option>
-          </select>
-          <select 
-            className="filter-select"
-            value={filterPerformance}
-            onChange={(e) => setFilterPerformance(e.target.value)}
-          >
-            <option>Performance</option>
-            <option>Outstanding</option>
-            <option>Excellent</option>
-            <option>Good</option>
-            <option>Average</option>
-          </select>
-          <select 
-            className="filter-select"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
           >
             <option>Sort By</option>
-            <option>Most Deals</option>
             <option>Most Clients</option>
             <option>Newest First</option>
           </select>
@@ -1093,6 +1045,8 @@ Date: ${new Date().toLocaleString()}`
                       <TableRow
                         key={row.id}
                         data-state={row.getIsSelected() && "selected"}
+                        onClick={() => handleViewDetails(row.original)}
+                        style={{ cursor: 'pointer' }}
                       >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
@@ -1152,18 +1106,16 @@ Date: ${new Date().toLocaleString()}`
                 <span>{broker.phone}</span>
               </div>
               <div className="card-info-row">
+                <span className="card-label">🏢 Company:</span>
+                <span>{broker.company || 'N/A'}</span>
+              </div>
+              <div className="card-info-row">
+                <span className="card-label">📜 License:</span>
+                <span>{broker.licenseNumber || 'N/A'}</span>
+              </div>
+              <div className="card-info-row">
                 <span className="card-label">👥 Clients:</span>
                 <span className="metric-value">{broker.clientsManaged}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">🎯 Bids / Deals:</span>
-                <span>
-                  <span className="metric-value">{broker.bidsSubmitted}</span> / <span className="metric-value success">{broker.successfulDeals}</span>
-                </span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📋 PO Count:</span>
-                <span className="metric-value">{broker.poCount}</span>
               </div>
               <div className="card-info-row">
                 <span className="card-label">💰 Commission:</span>
@@ -1223,6 +1175,14 @@ Date: ${new Date().toLocaleString()}`
               </button>
               <button 
                 className="btn btn-outline"
+                onClick={() => handleManageCommission(broker)}
+              >
+                💰 Commission
+              </button>
+            </div>
+            <div className="broker-card-actions" style={{ marginTop: '8px' }}>
+              <button 
+                className="btn btn-outline"
                 onClick={() => handleManageNotifications(broker)}
               >
                 🔔 Notify
@@ -1233,220 +1193,202 @@ Date: ${new Date().toLocaleString()}`
         )}
       </div>
 
-      {/* Broker Details Modal */}
-      {showDetailsModal && selectedBroker && (
-        <div className="modal-overlay" onClick={() => setShowDetailsModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      {/* Unified Broker Modal (View/Edit/Create) */}
+      {showBrokerModal && (
+        <div className="modal-overlay" onClick={handleCloseModal}>
+          <div className="modal-content modal-large broker-details-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Broker Profile Details</h2>
-              <button className="close-btn" onClick={() => setShowDetailsModal(false)}>×</button>
+              <div className="broker-details-header">
+                <div className="broker-details-title-section">
+                  <div className="broker-icon-large">
+                    {modalMode === 'view' ? <User size={24} /> : <Edit size={24} />}
+                  </div>
+                  <div>
+                    <h2>
+                      {modalMode === 'view' ? 'Broker Details' : 
+                       modalMode === 'edit' ? 'Edit Broker' : 
+                       'Create New Broker'}
+                    </h2>
+                    <p className="broker-subtitle">
+                      {modalMode === 'view' && selectedBroker ? selectedBroker.name :
+                       modalMode === 'edit' && selectedBroker ? selectedBroker.name :
+                       'Add a new broker to the system'}
+                    </p>
+                  </div>
+                </div>
+                <button className="close-btn" onClick={handleCloseModal}>×</button>
+              </div>
             </div>
-            <div className="modal-body">
-              <div className="broker-profile-section">
-                <div className="profile-avatar-large">
-                  {selectedBroker.name.charAt(0)}
+            <div className="modal-body broker-details-body">
+              {modalMode === 'view' && selectedBroker ? (
+                <>
+              {/* Broker Overview Card */}
+              <div className="broker-detail-card">
+                <div className="broker-detail-card-header">
+                  <User size={18} />
+                  <h3>Broker Overview</h3>
                 </div>
-                <h3>{selectedBroker.name}</h3>
-                <span className={`status-badge ${selectedBroker.status === 'Active' ? 'status-success' : 'status-error'}`}>
-                  {selectedBroker.status}
-                </span>
-                <span className={`performance-badge ${getPerformanceColor(selectedBroker.performance)}`}>
-                  {selectedBroker.performance}
-                </span>
+                <div className="broker-detail-card-content">
+                  <div className="broker-overview-grid">
+                    <div className="broker-overview-item">
+                      <div className="broker-overview-label">
+                        <Hash size={14} />
+                        <span>Broker ID</span>
+                      </div>
+                      <div className="broker-overview-value broker-id-value">
+                        {selectedBroker.id}
+                      </div>
+                    </div>
+                    <div className="broker-overview-item">
+                      <div className="broker-overview-label">
+                        <User size={14} />
+                        <span>Full Name</span>
+                      </div>
+                      <div className="broker-overview-value">
+                        {selectedBroker.name}
+                      </div>
+                    </div>
+                    <div className="broker-overview-item">
+                      <div className="broker-overview-label">
+                        <Mail size={14} />
+                        <span>Email</span>
+                      </div>
+                      <div className="broker-overview-value">
+                        {selectedBroker.email}
+                      </div>
+                    </div>
+                    <div className="broker-overview-item">
+                      <div className="broker-overview-label">
+                        <Phone size={14} />
+                        <span>Phone</span>
+                      </div>
+                      <div className="broker-overview-value">
+                        {selectedBroker.phone}
+                      </div>
+                    </div>
+                    <div className="broker-overview-item">
+                      <div className="broker-overview-label">
+                        <Building2 size={14} />
+                        <span>Company</span>
+                      </div>
+                      <div className="broker-overview-value">
+                        {selectedBroker.company || 'N/A'}
+                      </div>
+                    </div>
+                    <div className="broker-overview-item">
+                      <div className="broker-overview-label">
+                        <Award size={14} />
+                        <span>License Number</span>
+                      </div>
+                      <div className="broker-overview-value">
+                        {selectedBroker.licenseNumber || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="details-section">
-                <h4>Contact Information</h4>
-                <div className="details-grid">
-                  <div className="detail-item">
-                    <label>Email</label>
-                    <p>{selectedBroker.email}</p>
+              {/* Contact Information Card */}
+              {selectedBroker.address && (
+                <div className="broker-detail-card">
+                  <div className="broker-detail-card-header">
+                    <MapPin size={18} />
+                    <h3>Address</h3>
                   </div>
-                  <div className="detail-item">
-                    <label>Phone</label>
-                    <p>{selectedBroker.phone}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="details-section">
-                <h4>Performance Metrics</h4>
-                <div className="details-grid">
-                  <div className="detail-item">
-                    <label>Clients Managed</label>
-                    <p>{selectedBroker.clientsManaged}</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Bids Submitted</label>
-                    <p>{selectedBroker.bidsSubmitted}</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Successful Deals</label>
-                    <p>{selectedBroker.successfulDeals}</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Purchase Orders</label>
-                    <p>{selectedBroker.poCount}</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Commission Rate</label>
-                    <p>{selectedBroker.commission}</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Join Date</label>
-                    <p>{selectedBroker.joinDate}</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Documents</label>
-                    <p>{selectedBroker.documents || 0} uploaded</p>
+                  <div className="broker-detail-card-content">
+                    <div className="broker-address-content">
+                      {selectedBroker.address}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Assignments Section */}
-              <div className="details-section">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <h4>Assigned Clients ({getAssignedBuyers(selectedBroker.id).length})</h4>
+              {/* Assigned Clients Card */}
+              <div className="broker-detail-card">
+                <div className="broker-detail-card-header">
+                  <Users size={18} />
+                  <h3>Assigned Clients ({getAssignedBuyers(selectedBroker.id).length})</h3>
                   <button 
                     className="btn btn-outline"
                     onClick={() => fetchBrokerClients(selectedBroker.id)}
                     disabled={loadingClients[selectedBroker.id]}
-                    style={{ fontSize: '12px', padding: '4px 8px' }}
+                    style={{ marginLeft: 'auto', fontSize: '12px', padding: '4px 8px' }}
                   >
                     {loadingClients[selectedBroker.id] ? 'Loading...' : '🔄 Refresh'}
                   </button>
                 </div>
-                {loadingClients[selectedBroker.id] ? (
-                  <p className="no-assignments">Loading clients...</p>
-                ) : getAssignedBuyers(selectedBroker.id).length > 0 ? (
-                  <div className="assignments-list">
-                    {getAssignedBuyers(selectedBroker.id).map(buyer => (
-                      <div key={buyer.id} className="assignment-item" style={{ marginBottom: '12px', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '4px' }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>👤 {buyer.name}</div>
-                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>📧 {buyer.email}</div>
-                        {buyer.phone && (
-                          <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>📞 {buyer.phone}</div>
-                        )}
-                        {buyer.properties && buyer.properties.length > 0 && (
-                          <div style={{ marginTop: '8px' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Properties ({buyer.properties.length}):</div>
-                            {buyer.properties.map((prop, idx) => (
-                              <div key={idx} style={{ fontSize: '11px', color: '#888', marginLeft: '12px', marginBottom: '2px' }}>
-                                • {prop.flatNo} - {prop.buildingName}
-                              </div>
-                            ))}
+                <div className="broker-detail-card-content">
+                  {loadingClients[selectedBroker.id] ? (
+                    <p className="broker-empty-state">Loading clients...</p>
+                  ) : getAssignedBuyers(selectedBroker.id).length > 0 ? (
+                    <div className="broker-clients-list">
+                      {getAssignedBuyers(selectedBroker.id).map(buyer => (
+                        <div key={buyer.id} className="broker-client-item">
+                          <div className="broker-client-header">
+                            <User size={16} />
+                            <span className="broker-client-name">{buyer.name}</span>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-assignments">No clients assigned yet</p>
-                )}
+                          <div className="broker-client-details">
+                            <div className="broker-client-detail-row">
+                              <Mail size={12} />
+                              <span>{buyer.email}</span>
+                            </div>
+                            {buyer.phone && (
+                              <div className="broker-client-detail-row">
+                                <Phone size={12} />
+                                <span>{buyer.phone}</span>
+                              </div>
+                            )}
+                            {buyer.properties && buyer.properties.length > 0 && (
+                              <div className="broker-client-properties">
+                                <div className="broker-client-properties-label">Properties ({buyer.properties.length}):</div>
+                                {buyer.properties.map((prop, idx) => (
+                                  <div key={idx} className="broker-client-property-item">
+                                    • {prop.flatNo} - {prop.buildingName}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="broker-empty-state">No clients assigned yet</p>
+                  )}
+                </div>
               </div>
 
-              <div className="details-section">
-                <h4>Assigned Suppliers ({getAssignedSuppliers(selectedBroker.id).length})</h4>
-                {getAssignedSuppliers(selectedBroker.id).length > 0 ? (
-                  <div className="assignments-list">
-                    {getAssignedSuppliers(selectedBroker.id).map(supplier => (
-                      <div key={supplier.id} className="assignment-item">
-                        <span>🏭 {supplier.companyName}</span>
-                        <span className="assignment-meta">{supplier.category} - {supplier.location || 'Location N/A'}</span>
-                      </div>
-                    ))}
+              {/* Assigned Suppliers Card */}
+              {getAssignedSuppliers(selectedBroker.id).length > 0 && (
+                <div className="broker-detail-card">
+                  <div className="broker-detail-card-header">
+                    <Building2 size={18} />
+                    <h3>Assigned Suppliers ({getAssignedSuppliers(selectedBroker.id).length})</h3>
                   </div>
-                ) : (
-                  <p className="no-assignments">No suppliers assigned yet</p>
-                )}
-              </div>
-
-              {selectedBroker.address && (
-                <div className="address-section">
-                  <label>Address</label>
-                  <p>{selectedBroker.address}</p>
+                  <div className="broker-detail-card-content">
+                    <div className="broker-suppliers-list">
+                      {getAssignedSuppliers(selectedBroker.id).map(supplier => (
+                        <div key={supplier.id} className="broker-supplier-item">
+                          <Building2 size={16} />
+                          <div>
+                            <span className="broker-supplier-name">{supplier.companyName}</span>
+                            <span className="broker-supplier-meta">{supplier.category} - {supplier.location || 'Location N/A'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <div className="account-actions-section">
-                <h4>Account Actions</h4>
-                <div className="account-actions-grid">
-                  {selectedBroker.status === 'Active' ? (
-                    <button 
-                      className="btn btn-warning"
-                      onClick={() => {
-                        setShowDetailsModal(false);
-                        handleDeactivateBroker(selectedBroker.id);
-                      }}
-                    >
-                      ⏸️ Deactivate Account
-                    </button>
-                  ) : (
-                    <button 
-                      className="btn btn-success"
-                      onClick={() => {
-                        setShowDetailsModal(false);
-                        handleActivateBroker(selectedBroker.id);
-                      }}
-                    >
-                      ▶️ Activate Account
-                    </button>
-                  )}
-                  <button 
-                    className="btn btn-outline"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleManageAssignments(selectedBroker);
-                    }}
-                  >
-                    👥 Manage Assignments
-                  </button>
-                  <button 
-                    className="btn btn-outline"
-                    onClick={() => handleResetPassword(selectedBroker)}
-                  >
-                    🔑 Reset Password
-                  </button>
-                  <button 
-                    className="btn btn-outline"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleManageDocuments(selectedBroker);
-                    }}
-                  >
-                    📄 Manage Documents
-                  </button>
-                  <button 
-                    className="btn btn-outline"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleManageNotifications(selectedBroker);
-                    }}
-                  >
-                    🔔 Send Notification
-                  </button>
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button className="btn btn-outline" onClick={() => setShowDetailsModal(false)}>Close</button>
-                <button className="btn btn-primary" onClick={() => { setShowDetailsModal(false); handleEditBroker(selectedBroker); }}>Edit Broker</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create/Edit Broker Modal */}
-      {showBrokerModal && (
-        <div className="modal-overlay" onClick={() => setShowBrokerModal(false)}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{selectedBroker ? 'Edit Broker' : 'Create New Broker'}</h2>
-              <button className="close-btn" onClick={() => { setShowBrokerModal(false); setFormErrors({}); }}>×</button>
-            </div>
-            <div className="modal-body">
-              <form className="broker-form" onSubmit={handleSaveBroker}>
+                  <div className="broker-modal-actions">
+                    <button className="btn btn-outline" onClick={handleCloseModal}>Close</button>
+                    <button className="btn btn-primary" onClick={() => { setModalMode('edit'); }}>Edit Broker</button>
+                  </div>
+                </>
+              ) : (
+                <form className="broker-form" onSubmit={handleSaveBroker}>
                 <div className="form-row">
                   <div className="form-group">
                     <label>Full Name *</label>
@@ -1495,16 +1437,6 @@ Date: ${new Date().toLocaleString()}`
                     />
                     {formErrors.phone && <span className="error-message">{formErrors.phone}</span>}
                   </div>
-                  <div className="form-group">
-                    <label>Status</label>
-                    <select 
-                      name="status"
-                      defaultValue={selectedBroker?.status || 'Active'}
-                    >
-                      <option>Active</option>
-                      <option>Inactive</option>
-                    </select>
-                  </div>
                 </div>
 
                 <div className="form-row">
@@ -1541,18 +1473,6 @@ Date: ${new Date().toLocaleString()}`
                       className={formErrors.commission ? 'error' : ''}
                     />
                     {formErrors.commission && <span className="error-message">{formErrors.commission}</span>}
-                  </div>
-                  <div className="form-group">
-                    <label>Performance Rating</label>
-                    <select 
-                      name="performance"
-                      defaultValue={selectedBroker?.performance || 'Good'}
-                    >
-                      <option>Outstanding</option>
-                      <option>Excellent</option>
-                      <option>Good</option>
-                      <option>Average</option>
-                    </select>
                   </div>
                 </div>
 
@@ -1608,13 +1528,14 @@ Date: ${new Date().toLocaleString()}`
                   </div>
                 )}
 
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowBrokerModal(false); setSelectedBroker(null); setFormErrors({}); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">
-                    {selectedBroker ? 'Update Broker' : 'Create Broker'}
-                  </button>
-                </div>
-              </form>
+                  <div className="broker-modal-actions">
+                    <button type="button" className="btn btn-outline" onClick={handleCloseModal}>Cancel</button>
+                    <button type="submit" className="btn btn-primary">
+                      {modalMode === 'edit' ? 'Update Broker' : 'Create Broker'}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>
@@ -1914,6 +1835,78 @@ Date: ${new Date().toLocaleString()}`
                   <button type="submit" className="btn btn-primary">Save Assignments</button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Commission Management Modal */}
+      {showCommissionModal && selectedBroker && (
+        <div className="modal-overlay" onClick={() => setShowCommissionModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Manage Commission - {selectedBroker.name}</h2>
+              <button className="close-btn" onClick={() => setShowCommissionModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="documents-summary">
+                <p className="summary-text">
+                  Broker: <strong>{selectedBroker.name}</strong>
+                </p>
+                <p className="summary-text">
+                  Email: <strong>{selectedBroker.email}</strong>
+                </p>
+                <p className="summary-text">
+                  Current Commission Rate: <strong>{selectedBroker.commission || 'N/A'}</strong>
+                </p>
+              </div>
+
+              <h3 className="section-title">Update Commission Rate</h3>
+              <form className="commission-form" onSubmit={handleSaveCommission}>
+                <div className="form-group">
+                  <label>Commission Rate *</label>
+                  <input 
+                    type="text" 
+                    name="commission"
+                    placeholder="e.g., 2.5% or 2.5" 
+                    defaultValue={selectedBroker.commission && selectedBroker.commission !== 'N/A' ? selectedBroker.commission : ''}
+                    pattern="[0-9]+(\.[0-9]{1,2})?%?"
+                    title="Enter a valid commission rate (e.g., 2.5% or 2.5)"
+                    required
+                  />
+                  <small style={{ fontSize: '12px', color: 'var(--text-light)', marginTop: '4px', display: 'block' }}>
+                    Enter commission as percentage (e.g., 2.5% or 2.5). This rate will be applied to all deals.
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>Notes (Optional)</label>
+                  <textarea 
+                    name="commissionNotes"
+                    rows="3"
+                    placeholder="Add any notes about this commission rate change..."
+                  ></textarea>
+                </div>
+
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => setShowCommissionModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Update Commission</button>
+                </div>
+              </form>
+
+              <h3 className="section-title" style={{ marginTop: '30px' }}>Commission Information</h3>
+              <div className="commission-info-section">
+                <div className="info-item">
+                  <span className="info-label">📊 Performance:</span>
+                  <span className={`performance-badge ${getPerformanceColor(selectedBroker.performance || 'Average')}`}>
+                    {selectedBroker.performance || 'Average'}
+                  </span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">💰 Total Commission Earned:</span>
+                  <span className="info-value">Calculated based on deals</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -2,16 +2,22 @@ import { useState, useMemo, useEffect } from 'react'
 import './PropertyManagement.css'
 import { 
   Home, 
-  XCircle, 
   DollarSign, 
   Search,
   Eye,
   Edit,
   Trash2,
-  User,
   MapPin,
   Plus,
-  MoreHorizontal
+  MoreHorizontal,
+  Building2,
+  Calendar,
+  Percent,
+  Layers,
+  User,
+  Briefcase,
+  Image as ImageIcon,
+  Hash
 } from 'lucide-react'
 import PropertyForm from '../../components/PropertyForm/PropertyForm'
 import {
@@ -23,7 +29,6 @@ import {
   useReactTable,
 } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -40,10 +45,35 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SearchableSelect } from "@/components/ui/searchable-select"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 
-// API Base URL
+// Utilities
+import {
+  formatLocation,
+  getStatus,
+  getProgress,
+  getDisplayStage,
+  getStageColorClass,
+  getInstalmentsProgress,
+  formatCurrency,
+  formatDate,
+  getPerson
+} from './utils'
+
+// Components
+import { ProgressCircle } from './components/ProgressCircle'
+import { PersonCell } from './components/PersonCell'
+import { StatusBadge } from './components/StatusBadge'
+import { 
+  DetailSection, 
+  DetailGrid, 
+  DetailItem, 
+  PersonDetailCard 
+} from './components/DetailSection'
+
+// Constants
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
 
 function PropertyManagement() {
@@ -69,6 +99,11 @@ function PropertyManagement() {
   const [newInstalment, setNewInstalment] = useState({ number: '', dueDate: '', amount: '' })
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [generateData, setGenerateData] = useState({ count: 5, startDate: '', intervalDays: 30 })
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [assignData, setAssignData] = useState({ buyerId: '', brokerId: '' })
+  const [availableBuyers, setAvailableBuyers] = useState([])
+  const [availableBrokers, setAvailableBrokers] = useState([])
+  const [loadingAssign, setLoadingAssign] = useState(false)
   
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -79,43 +114,12 @@ function PropertyManagement() {
   // Projects list for filter (extracted from properties)
   const [projects, setProjects] = useState([])
 
-  // Helper function to format location as string
-  const formatLocation = (location) => {
-    if (!location) return 'N/A'
-    if (typeof location === 'string') return location
-    if (location.city && location.state) {
-      return `${location.city}, ${location.state}`
-    }
-    if (location.city) return location.city
-    if (location.address) return location.address
-    return 'N/A'
-  }
-
   // Helper function to get project name from property
   const getProjectName = (property) => {
     if (property.project?.name) return property.project.name
     if (!property.projectId) return 'N/A'
     const project = projects.find(p => p.id === property.projectId || p._id === property.projectId)
     return project?.name || 'N/A'
-  }
-
-  // Helper function to get status (handle both old and new format)
-  const getStatus = (property) => {
-    return property.status?.toLowerCase() || 'active'
-  }
-
-  // Helper function to get progress data (handle both old and new format)
-  const getProgress = (property) => {
-    if (property.progress) {
-      return {
-        percentage: property.progress.percentage || 0,
-        stage: property.progress.stage || ''
-      }
-    }
-    return {
-      percentage: property.progressPercentage || 0,
-      stage: property.currentStage || ''
-    }
   }
 
   // Extract unique projects from properties list for filter
@@ -164,6 +168,33 @@ function PropertyManagement() {
     fetchProperties()
   }, [])
 
+  // Fetch buyers and brokers for assignment
+  useEffect(() => {
+    const fetchBuyersAndBrokers = async () => {
+      try {
+        const [buyersRes, brokersRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/buyers`),
+          fetch(`${API_BASE_URL}/brokers`)
+        ])
+        
+        const buyersData = await buyersRes.json()
+        const brokersData = await brokersRes.json()
+        
+        if (buyersData.success && buyersData.data) {
+          setAvailableBuyers(buyersData.data || [])
+        }
+        
+        if (brokersData.success && brokersData.data) {
+          setAvailableBrokers(brokersData.data || [])
+        }
+      } catch (err) {
+        console.error('Error fetching buyers/brokers:', err)
+      }
+    }
+
+    fetchBuyersAndBrokers()
+  }, [])
+
   // Filtered and Searched Properties
   const filteredProperties = useMemo(() => {
     return properties.filter(property => {
@@ -174,14 +205,20 @@ function PropertyManagement() {
       const matchesSearch = 
         property.flatNo?.toLowerCase().includes(searchLower) ||
         projectName?.toLowerCase().includes(searchLower) ||
-        (property.users && property.users.some(u => 
-          u?.name?.toLowerCase().includes(searchLower) || 
-          u?.email?.toLowerCase().includes(searchLower)
-        )) ||
-        (property.user && (
-          property.user?.name?.toLowerCase().includes(searchLower) ||
-          property.user?.email?.toLowerCase().includes(searchLower)
-        )) ||
+        (() => {
+          const buyer = getPerson(property, 'buyer')
+          const broker = getPerson(property, 'broker')
+          return (
+            (buyer && (
+              buyer?.name?.toLowerCase().includes(searchLower) ||
+              buyer?.email?.toLowerCase().includes(searchLower)
+            )) ||
+            (broker && (
+              broker?.name?.toLowerCase().includes(searchLower) ||
+              broker?.email?.toLowerCase().includes(searchLower)
+            ))
+          )
+        })() ||
         locationStr?.toLowerCase().includes(searchLower)
 
       // Project filter
@@ -582,6 +619,57 @@ function PropertyManagement() {
     }
   }
 
+  const handleAssignBuyerBroker = (property) => {
+    setSelectedProperty(property)
+    // Set current buyer and broker if they exist
+    // Handle both array format (buyers/brokers) and direct format (buyerId/brokerId)
+    const currentBuyer = getPerson(property, 'buyer') || (property.buyerId ? { id: property.buyerId, _id: property.buyerId } : null)
+    const currentBroker = getPerson(property, 'broker') || (property.brokerId ? { id: property.brokerId, _id: property.brokerId } : null)
+    setAssignData({
+      buyerId: currentBuyer?.id || currentBuyer?._id || '',
+      brokerId: currentBroker?.id || currentBroker?._id || ''
+    })
+    setShowAssignModal(true)
+  }
+
+  const handleSaveAssignment = async () => {
+    if (!selectedProperty || !assignData.buyerId) {
+      showNotification('Please select a buyer', 'error')
+      return
+    }
+
+    try {
+      setLoadingAssign(true)
+      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          buyerId: assignData.buyerId,
+          brokerId: assignData.brokerId || null
+        })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Buyer and broker assigned successfully!', 'success')
+        setShowAssignModal(false)
+        setAssignData({ buyerId: '', brokerId: '' })
+        setSelectedProperty(null)
+        // Refresh properties list
+        window.location.reload()
+      } else {
+        showNotification(data.error || 'Failed to assign buyer and broker', 'error')
+      }
+    } catch (err) {
+      console.error('Error assigning buyer and broker:', err)
+      showNotification('Failed to assign buyer and broker', 'error')
+    } finally {
+      setLoadingAssign(false)
+    }
+  }
+
   const handleManageInstalments = async (property) => {
     setSelectedProperty(property)
     setShowInstalmentsModal(true)
@@ -778,37 +866,8 @@ function PropertyManagement() {
     return projectNames.sort()
   }, [properties, projects])
 
-  // Normalize current stage for display (matches radio button values)
-  const getDisplayStage = (stage) => {
-    if (!stage || stage.trim() === '') return 'None'
-    const stageLower = stage.toLowerCase()
-    if (stageLower.includes('foundation')) {
-      return 'Foundation'
-    } else if (stageLower.includes('structure')) {
-      return 'Structure'
-    } else if (stageLower.includes('finishing')) {
-      return 'Finishing'
-    }
-    // Return capitalized version if it doesn't match known stages
-    return stage.charAt(0).toUpperCase() + stage.slice(1).toLowerCase()
-  }
-
   // Define columns
   const columns = useMemo(() => {
-    // Helper function to calculate instalments progress
-    const getInstalmentsProgress = (property) => {
-      const instalments = property.instalments || []
-      if (instalments.length === 0) return { percentage: 0, paid: 0, total: 0 }
-      
-      const totalAmount = instalments.reduce((sum, inst) => sum + (inst.amount || 0), 0)
-      const paidAmount = instalments
-        .filter(inst => inst.status === 'paid')
-        .reduce((sum, inst) => sum + (inst.amount || 0), 0)
-      
-      const percentage = totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0
-      return { percentage, paid: paidAmount, total: totalAmount }
-    }
-
     return [
     {
       id: "propertyDetails",
@@ -866,44 +925,17 @@ function PropertyManagement() {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Buyer" />
       ),
-      cell: ({ row }) => {
-        const property = row.original
-        // Handle both users array and user single object, also check buyers array
-        const buyers = property.buyers || (property.users ? (Array.isArray(property.users) ? property.users : [property.users]) : []) || (property.user ? [property.user] : [])
-        
-        if (!buyers || buyers.length === 0) {
-          return (
-            <span className="no-assignment" style={{ fontStyle: 'italic', color: 'hsl(var(--muted-foreground))' }}>
-              Not assigned
-            </span>
-          )
-        }
-        
-        // Show first buyer, or count if multiple
-        const firstBuyer = buyers[0]
-        const buyerCount = buyers.length
-        
-        return (
-          <div className="user-info-pm">
-            <User size={16} style={{ marginRight: '6px', color: 'hsl(var(--primary))', flexShrink: 0 }} />
-            <div style={{ minWidth: 0 }}>
-              <div className="user-name-pm" style={{ 
-                overflow: 'hidden', 
-                textOverflow: 'ellipsis', 
-                whiteSpace: 'nowrap',
-                maxWidth: '140px'
-              }}>
-                {firstBuyer?.name || 'N/A'}
-              </div>
-              {buyerCount > 1 && (
-                <div className="broker-meta" style={{ fontSize: '11px', marginTop: '2px' }}>
-                  +{buyerCount - 1} more
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      },
+      cell: ({ row }) => <PersonCell person={getPerson(row.original, 'buyer')} type="buyer" />,
+    },
+    {
+      id: "broker",
+      size: 160,
+      minSize: 140,
+      maxSize: 200,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Broker" />
+      ),
+      cell: ({ row }) => <PersonCell person={getPerson(row.original, 'broker')} type="broker" />,
     },
     {
       id: "currentStage",
@@ -914,22 +946,9 @@ function PropertyManagement() {
         <DataTableColumnHeader column={column} title="Current Stage" />
       ),
       cell: ({ row }) => {
-        const property = row.original
-        const progress = getProgress(property)
+        const progress = getProgress(row.original)
         const stage = getDisplayStage(progress.stage)
-        const getStageColorClass = (s) => {
-          const stageLower = s.toLowerCase()
-          if (stageLower.includes('foundation')) return 'status-error'
-          if (stageLower.includes('structure')) return 'status-info'
-          if (stageLower.includes('finishing')) return 'status-success'
-          return 'status-info'
-        }
-        
-        return (
-          <span className={`status-badge ${getStageColorClass(stage)}`}>
-            {stage}
-          </span>
-        )
+        return <StatusBadge status={stage} type="stage" />
       },
     },
     {
@@ -941,69 +960,8 @@ function PropertyManagement() {
         <DataTableColumnHeader column={column} title="Progress" />
       ),
       cell: ({ row }) => {
-        const property = row.original
-        const progress = getProgress(property)
-        const percentage = progress.percentage || 0
-        const getProgressColor = (pct) => {
-          if (pct >= 75) return 'hsl(142 76% 36%)'
-          if (pct >= 50) return 'hsl(38 92% 50%)'
-          if (pct >= 25) return 'hsl(25 95% 53%)'
-          return 'hsl(0 84% 60%)'
-        }
-        
-        const size = 48
-        const strokeWidth = 4
-        const radius = (size - strokeWidth) / 2
-        const circumference = 2 * Math.PI * radius
-        const offset = circumference - (percentage / 100) * circumference
-        const color = getProgressColor(percentage)
-        
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <div style={{ position: 'relative', width: size, height: size }}>
-              <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-                {/* Background circle */}
-                <circle
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={radius}
-                  fill="none"
-                  stroke="hsl(var(--muted))"
-                  strokeWidth={strokeWidth}
-                />
-                {/* Progress circle */}
-                <circle
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={radius}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={circumference}
-                  strokeDashoffset={offset}
-                  strokeLinecap="round"
-                  style={{
-                    transition: 'stroke-dashoffset 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                    filter: `drop-shadow(0 0 4px ${color}60)`
-                  }}
-                />
-              </svg>
-              {/* Percentage text in center */}
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                fontSize: '11px',
-                fontWeight: '700',
-                color: 'hsl(var(--foreground))',
-                lineHeight: '1'
-              }}>
-                {percentage}%
-              </div>
-            </div>
-          </div>
-        )
+        const percentage = getProgress(row.original).percentage || 0
+        return <ProgressCircle percentage={percentage} />
       },
     },
     {
@@ -1015,69 +973,8 @@ function PropertyManagement() {
         <DataTableColumnHeader column={column} title="Instalments" />
       ),
       cell: ({ row }) => {
-        const property = row.original
-        const instalmentsProgress = getInstalmentsProgress(property)
-        const percentage = instalmentsProgress.percentage || 0
-        const getProgressColor = (pct) => {
-          if (pct >= 75) return 'hsl(142 76% 36%)'
-          if (pct >= 50) return 'hsl(38 92% 50%)'
-          if (pct >= 25) return 'hsl(25 95% 53%)'
-          return 'hsl(0 84% 60%)'
-        }
-        
-        const size = 48
-        const strokeWidth = 4
-        const radius = (size - strokeWidth) / 2
-        const circumference = 2 * Math.PI * radius
-        const offset = circumference - (percentage / 100) * circumference
-        const color = getProgressColor(percentage)
-        
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-            <div style={{ position: 'relative', width: size, height: size }}>
-              <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-                {/* Background circle */}
-                <circle
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={radius}
-                  fill="none"
-                  stroke="hsl(var(--muted))"
-                  strokeWidth={strokeWidth}
-                />
-                {/* Progress circle */}
-                <circle
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={radius}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={circumference}
-                  strokeDashoffset={offset}
-                  strokeLinecap="round"
-                  style={{
-                    transition: 'stroke-dashoffset 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                    filter: `drop-shadow(0 0 4px ${color}60)`
-                  }}
-                />
-              </svg>
-              {/* Percentage text in center */}
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                fontSize: '11px',
-                fontWeight: '700',
-                color: 'hsl(var(--foreground))',
-                lineHeight: '1'
-              }}>
-                {percentage}%
-              </div>
-            </div>
-          </div>
-        )
+        const percentage = getInstalmentsProgress(row.original).percentage || 0
+        return <ProgressCircle percentage={percentage} />
       },
     },
     {
@@ -1088,19 +985,7 @@ function PropertyManagement() {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Status" />
       ),
-      cell: ({ row }) => {
-        const property = row.original
-        const status = getStatus(property)
-        return (
-          <span className={`status-badge ${
-            status === 'active' ? 'status-success' : 
-            status === 'completed' ? 'status-info' : 
-            'status-error'
-          }`}>
-            {status}
-          </span>
-        )
-      },
+      cell: ({ row }) => <StatusBadge status={getStatus(row.original)} type="status" />,
     },
     {
       id: "actions",
@@ -1113,12 +998,16 @@ function PropertyManagement() {
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
+              <Button 
+                variant="ghost" 
+                className="h-8 w-8 p-0"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <span className="sr-only">Open menu</span>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuItem onClick={() => handleViewDetails(property)}>
                 <Eye className="mr-2 h-4 w-4" />
@@ -1131,6 +1020,10 @@ function PropertyManagement() {
               <DropdownMenuItem onClick={() => handleManageInstalments(property)}>
                 <DollarSign className="mr-2 h-4 w-4" />
                 Manage Instalments
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleAssignBuyerBroker(property)}>
+                <User className="mr-2 h-4 w-4" />
+                Assign Buyer and Broker
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
@@ -1158,6 +1051,11 @@ function PropertyManagement() {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
+    initialState: {
+      pagination: {
+        pageSize: 20,
+      },
+    },
     state: {
       sorting,
       columnFilters,
@@ -1256,9 +1154,16 @@ function PropertyManagement() {
                       <TableRow
                         key={row.id}
                         data-state={row.getIsSelected() && "selected"}
+                        onClick={() => handleViewDetails(row.original)}
+                        style={{ cursor: 'pointer' }}
                       >
                         {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
+                          <TableCell key={cell.id} onClick={(e) => {
+                            // Prevent row click when clicking on actions dropdown
+                            if (cell.column.id === 'actions') {
+                              e.stopPropagation()
+                            }
+                          }}>
                             {flexRender(
                               cell.column.columnDef.cell,
                               cell.getContext()
@@ -1290,199 +1195,338 @@ function PropertyManagement() {
       {/* Property Details Modal */}
       {showDetailsModal && selectedProperty && (
         <div className="modal-overlay" onClick={() => setShowDetailsModal(false)}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content modal-large property-details-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Property Details</h2>
-              <button className="close-btn" onClick={() => setShowDetailsModal(false)}>×</button>
+              <div className="property-details-header">
+                <div className="property-details-title-section">
+                  <div className="property-icon-large">
+                    <Home size={24} />
+                  </div>
+                  <div>
+                    <h2>Property Details</h2>
+                    <p className="property-subtitle">Flat {selectedProperty.flatNo}</p>
+                  </div>
+                </div>
+                <button className="close-btn" onClick={() => setShowDetailsModal(false)}>×</button>
+              </div>
             </div>
-            <div className="modal-body">
-              <div className="details-grid">
-                <div className="detail-item">
-                  <label>Property ID</label>
-                  <p style={{ fontFamily: 'monospace', fontSize: '0.9em', color: 'var(--text-secondary)' }}>
-                    {selectedProperty.id}
-                  </p>
+            <div className="modal-body property-details-body">
+              {/* Property Overview Card */}
+              <div className="property-detail-card">
+                <div className="property-detail-card-header">
+                  <Building2 size={18} />
+                  <h3>Property Overview</h3>
                 </div>
-                <div className="detail-item">
-                  <label>Flat/Unit Number</label>
-                  <p>{selectedProperty.flatNo}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Building Name</label>
-                  <p>{selectedProperty.buildingName || 'N/A'}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Project</label>
-                  <p>{selectedProperty.project?.name || getProjectName(selectedProperty)}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Location</label>
-                  <p>{formatLocation(selectedProperty.location)}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Status</label>
-                  <p>
-                    <span className={`status-badge ${
-                      getStatus(selectedProperty) === 'active' ? 'status-success' : 
-                      getStatus(selectedProperty) === 'completed' ? 'status-info' : 
-                      'status-error'
-                    }`}>
-                      {getStatus(selectedProperty)}
-                    </span>
-                  </p>
-                </div>
-                <div className="detail-item">
-                  <label>Progress Percentage</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontWeight: '600', fontSize: '1em' }}>
-                      {getProgress(selectedProperty).percentage || 0}%
-                    </span>
-                    <div style={{ 
-                      flex: 1, 
-                      height: '10px', 
-                      backgroundColor: '#e0e0e0', 
-                      borderRadius: '5px', 
-                      overflow: 'hidden',
-                      maxWidth: '150px'
-                    }}>
-                      <div 
-                        style={{ 
-                          width: `${Math.min(getProgress(selectedProperty).percentage || 0, 100)}%`, 
-                          height: '100%', 
-                          backgroundColor: 'var(--primary-color, #4CAF50)',
-                          transition: 'width 0.3s ease',
-                          borderRadius: '5px'
-                        }}
-                      ></div>
+                <div className="property-detail-card-content">
+                  <div className="property-overview-grid">
+                    <div className="property-overview-item">
+                      <div className="property-overview-label">
+                        <Hash size={14} />
+                        <span>Property ID</span>
+                      </div>
+                      <div className="property-overview-value property-id-value">
+                        {selectedProperty.id}
+                      </div>
+                    </div>
+                    <div className="property-overview-item">
+                      <div className="property-overview-label">
+                        <Home size={14} />
+                        <span>Flat/Unit Number</span>
+                      </div>
+                      <div className="property-overview-value">
+                        {selectedProperty.flatNo}
+                      </div>
+                    </div>
+                    <div className="property-overview-item">
+                      <div className="property-overview-label">
+                        <Building2 size={14} />
+                        <span>Building Name</span>
+                      </div>
+                      <div className="property-overview-value">
+                        {selectedProperty.buildingName || 'N/A'}
+                      </div>
+                    </div>
+                    <div className="property-overview-item">
+                      <div className="property-overview-label">
+                        <Layers size={14} />
+                        <span>Project</span>
+                      </div>
+                      <div className="property-overview-value">
+                        {selectedProperty.project?.name || getProjectName(selectedProperty)}
+                      </div>
+                    </div>
+                    <div className="property-overview-item">
+                      <div className="property-overview-label">
+                        <MapPin size={14} />
+                        <span>Location</span>
+                      </div>
+                      <div className="property-overview-value">
+                        {selectedProperty.location?.address && `${selectedProperty.location.address}, `}
+                        {formatLocation(selectedProperty.location)}
+                        {selectedProperty.location?.pincode && ` - ${selectedProperty.location.pincode}`}
+                      </div>
+                    </div>
+                    <div className="property-overview-item">
+                      <div className="property-overview-label">
+                        <span>Status</span>
+                      </div>
+                      <div className="property-overview-value">
+                        <StatusBadge status={getStatus(selectedProperty)} type="status" />
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="detail-item">
-                  <label>Current Stage</label>
-                  <p>{getDisplayStage(getProgress(selectedProperty).stage)}</p>
-                </div>
-                {selectedProperty.specifications?.area && (
-                  <div className="detail-item">
-                    <label>Area</label>
-                    <p>{selectedProperty.specifications.area} sqft</p>
-                  </div>
-                )}
-                {selectedProperty.specifications?.bedrooms && (
-                  <div className="detail-item">
-                    <label>Bedrooms</label>
-                    <p>{selectedProperty.specifications.bedrooms}</p>
-                  </div>
-                )}
-                {selectedProperty.specifications?.bathrooms && (
-                  <div className="detail-item">
-                    <label>Bathrooms</label>
-                    <p>{selectedProperty.specifications.bathrooms}</p>
-                  </div>
-                )}
-                {selectedProperty.pricing?.totalPrice && (
-                  <div className="detail-item">
-                    <label>Total Price</label>
-                    <p>₹{selectedProperty.pricing.totalPrice.toLocaleString('en-IN')}</p>
-                  </div>
-                )}
-                {selectedProperty.pricing?.bookingAmount && (
-                  <div className="detail-item">
-                    <label>Booking Amount</label>
-                    <p>₹{selectedProperty.pricing.bookingAmount.toLocaleString('en-IN')}</p>
-                  </div>
-                )}
               </div>
 
-              {((selectedProperty.users && selectedProperty.users.length > 0) || selectedProperty.user) && (
-                <div className="details-section" style={{ marginTop: '24px' }}>
-                  <h4>Assigned Users</h4>
-                  {(selectedProperty.users && selectedProperty.users.length > 0 ? selectedProperty.users : [selectedProperty.user]).map((user, idx) => (
-                    <div key={user?.id || idx} style={{ marginBottom: idx < (selectedProperty.users?.length || 1) - 1 ? '20px' : '0', padding: '16px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
-                      <div className="details-grid">
-                        <div className="detail-item">
-                          <label>Name</label>
-                          <p>{user?.name}</p>
-                        </div>
-                        <div className="detail-item">
-                          <label>Email</label>
-                          <p>{user?.email}</p>
-                        </div>
-                        {user?.phone && (
-                          <div className="detail-item">
-                            <label>Phone</label>
-                            <p>{user.phone}</p>
+              {/* Progress & Timeline Card */}
+              <div className="property-detail-card">
+                <div className="property-detail-card-header">
+                  <Percent size={18} />
+                  <h3>Progress & Timeline</h3>
+                </div>
+                <div className="property-detail-card-content">
+                  <div className="progress-timeline-grid">
+                    <div className="progress-item">
+                      <div className="progress-item-label">
+                        <Percent size={14} />
+                        <span>Progress Percentage</span>
+                      </div>
+                      <div className="progress-item-content">
+                        <div className="progress-display">
+                          <span className="progress-percentage">
+                            {getProgress(selectedProperty).percentage || 0}%
+                          </span>
+                          <div className="progress-bar-container">
+                            <div 
+                              className="progress-bar-fill"
+                              style={{ 
+                                width: `${Math.min(getProgress(selectedProperty).percentage || 0, 100)}%`
+                              }}
+                            ></div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {((selectedProperty.brokers && selectedProperty.brokers.length > 0) || selectedProperty.broker) && (
-                <div className="details-section" style={{ marginTop: '24px' }}>
-                  <h4>Assigned Brokers</h4>
-                  {(selectedProperty.brokers && selectedProperty.brokers.length > 0 ? selectedProperty.brokers : (selectedProperty.broker ? [selectedProperty.broker] : [])).map((broker, idx) => (
-                    <div key={broker?.id || idx} style={{ marginBottom: idx < (selectedProperty.brokers?.length || 1) - 1 ? '20px' : '0', padding: '16px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
-                      <div className="details-grid">
-                        <div className="detail-item">
-                          <label>Name</label>
-                          <p>{broker?.name}</p>
-                        </div>
-                        <div className="detail-item">
-                          <label>Company</label>
-                          <p>{broker?.company || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Project Gallery Section */}
-              <div className="details-section" style={{ marginTop: '24px' }}>
-                <h4>Project Gallery</h4>
-                {loadingGallery ? (
-                  <p style={{ color: 'var(--text-secondary)' }}>Loading gallery...</p>
-                ) : galleryImages.length > 0 ? (
-                  <div className="gallery-grid" style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', 
-                    gap: '12px',
-                    marginTop: '12px'
-                  }}>
-                    {galleryImages.map((img) => (
-                      <div key={img.id} className="gallery-item" style={{ position: 'relative' }}>
-                        <img 
-                          src={img.url} 
-                          alt={img.caption || 'Gallery image'} 
-                          style={{ 
-                            width: '100%', 
-                            height: '120px', 
-                            objectFit: 'cover', 
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                          }}
-                          onClick={() => window.open(img.url, '_blank')}
-                        />
-                        {img.caption && (
-                          <p style={{ 
-                            fontSize: '0.75em', 
-                            color: 'var(--text-secondary)', 
-                            marginTop: '4px',
-                            textOverflow: 'ellipsis',
-                            overflow: 'hidden',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {img.caption}
-                          </p>
-                        )}
+                    <div className="progress-item">
+                      <div className="progress-item-label">
+                        <Layers size={14} />
+                        <span>Current Stage</span>
                       </div>
-                    ))}
+                      <div className="progress-item-value">
+                        {getDisplayStage(getProgress(selectedProperty).stage)}
+                      </div>
+                    </div>
+                    <div className="progress-item">
+                      <div className="progress-item-label">
+                        <Calendar size={14} />
+                        <span>Possession Date</span>
+                      </div>
+                      <div className="progress-item-value">
+                        {formatDate(selectedProperty.possessionDate)}
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <p style={{ color: 'var(--text-secondary)' }}>No gallery images yet</p>
-                )}
+                </div>
+              </div>
+
+              {/* Specifications Card */}
+              <div className="property-detail-card">
+                <div className="property-detail-card-header">
+                  <Home size={18} />
+                  <h3>Specifications</h3>
+                </div>
+                <div className="property-detail-card-content">
+                  <div className="specs-grid">
+                    <div className="spec-item">
+                      <div className="spec-label">Area</div>
+                      <div className="spec-value">
+                        {selectedProperty.specifications?.area 
+                          ? `${selectedProperty.specifications.area} ${selectedProperty.specifications?.areaUnit || 'sqft'}`
+                          : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="spec-item">
+                      <div className="spec-label">Bedrooms</div>
+                      <div className="spec-value">{selectedProperty.specifications?.bedrooms || 'N/A'}</div>
+                    </div>
+                    <div className="spec-item">
+                      <div className="spec-label">Bathrooms</div>
+                      <div className="spec-value">{selectedProperty.specifications?.bathrooms || 'N/A'}</div>
+                    </div>
+                    <div className="spec-item">
+                      <div className="spec-label">Balconies</div>
+                      <div className="spec-value">{selectedProperty.specifications?.balconies || 'N/A'}</div>
+                    </div>
+                    <div className="spec-item">
+                      <div className="spec-label">Floor</div>
+                      <div className="spec-value">{selectedProperty.specifications?.floor || 'N/A'}</div>
+                    </div>
+                    <div className="spec-item">
+                      <div className="spec-label">Facing</div>
+                      <div className="spec-value">{selectedProperty.specifications?.facing || 'N/A'}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing Card */}
+              <div className="property-detail-card">
+                <div className="property-detail-card-header">
+                  <DollarSign size={18} />
+                  <h3>Pricing</h3>
+                </div>
+                <div className="property-detail-card-content">
+                  <div className="pricing-grid">
+                    <div className="pricing-item">
+                      <div className="pricing-label">Currency</div>
+                      <div className="pricing-value">{selectedProperty.pricing?.currency || 'INR'}</div>
+                    </div>
+                    <div className="pricing-item pricing-item-highlight">
+                      <div className="pricing-label">Total Price</div>
+                      <div className="pricing-value pricing-value-large">
+                        {selectedProperty.pricing?.totalPrice ? formatCurrency(selectedProperty.pricing.totalPrice) : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="pricing-item">
+                      <div className="pricing-label">Price Per Sqft</div>
+                      <div className="pricing-value">
+                        {selectedProperty.pricing?.pricePerSqft 
+                          ? formatCurrency(selectedProperty.pricing.pricePerSqft)
+                          : selectedProperty.pricing?.totalPrice && selectedProperty.specifications?.area
+                          ? formatCurrency(Math.round(selectedProperty.pricing.totalPrice / selectedProperty.specifications.area))
+                          : 'N/A'}
+                      </div>
+                    </div>
+                    <div className="pricing-item">
+                      <div className="pricing-label">Booking Amount</div>
+                      <div className="pricing-value">
+                        {selectedProperty.pricing?.bookingAmount ? formatCurrency(selectedProperty.pricing.bookingAmount) : 'N/A'}
+                      </div>
+                    </div>
+                    {selectedProperty.pricing?.paidAmount !== undefined && (
+                      <div className="pricing-item">
+                        <div className="pricing-label">Paid Amount</div>
+                        <div className="pricing-value pricing-value-success">
+                          {formatCurrency(selectedProperty.pricing.paidAmount)}
+                        </div>
+                      </div>
+                    )}
+                    {selectedProperty.pricing?.pendingAmount !== undefined && (
+                      <div className="pricing-item">
+                        <div className="pricing-label">Pending Amount</div>
+                        <div className="pricing-value pricing-value-warning">
+                          {formatCurrency(selectedProperty.pricing.pendingAmount)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Instalments Summary Card */}
+              {selectedProperty.instalments && selectedProperty.instalments.length > 0 && (
+                <div className="property-detail-card">
+                  <div className="property-detail-card-header">
+                    <DollarSign size={18} />
+                    <h3>Instalments Summary</h3>
+                  </div>
+                  <div className="property-detail-card-content">
+                    <div className="instalments-summary-grid">
+                      <div className="instalments-summary-item">
+                        <div className="instalments-summary-label">Total Instalments</div>
+                        <div className="instalments-summary-value">{selectedProperty.instalments.length}</div>
+                      </div>
+                      <div className="instalments-summary-item">
+                        <div className="instalments-summary-label">Total Amount</div>
+                        <div className="instalments-summary-value instalments-summary-value-large">
+                          {formatCurrency(
+                            selectedProperty.instalments.reduce((sum, inst) => sum + (inst.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div className="instalments-summary-item instalments-summary-item-success">
+                        <div className="instalments-summary-label">Paid</div>
+                        <div className="instalments-summary-value instalments-summary-value-success">
+                          {formatCurrency(
+                            selectedProperty.instalments
+                              .filter(inst => inst.status === 'paid')
+                              .reduce((sum, inst) => sum + (inst.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div className="instalments-summary-item instalments-summary-item-warning">
+                        <div className="instalments-summary-label">Pending</div>
+                        <div className="instalments-summary-value instalments-summary-value-warning">
+                          {formatCurrency(
+                            selectedProperty.instalments.reduce((sum, inst) => sum + (inst.amount || 0), 0) -
+                            selectedProperty.instalments
+                              .filter(inst => inst.status === 'paid')
+                              .reduce((sum, inst) => sum + (inst.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Assigned People Cards */}
+              <div className="assigned-people-grid">
+                <div className="property-detail-card">
+                  <div className="property-detail-card-header">
+                    <User size={18} />
+                    <h3>Assigned Buyer</h3>
+                  </div>
+                  <div className="property-detail-card-content">
+                    <PersonDetailCard person={getPerson(selectedProperty, 'buyer')} type="buyer" />
+                  </div>
+                </div>
+
+                <div className="property-detail-card">
+                  <div className="property-detail-card-header">
+                    <Briefcase size={18} />
+                    <h3>Assigned Broker</h3>
+                  </div>
+                  <div className="property-detail-card-content">
+                    <PersonDetailCard person={getPerson(selectedProperty, 'broker')} type="broker" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Project Gallery Card */}
+              <div className="property-detail-card">
+                <div className="property-detail-card-header">
+                  <ImageIcon size={18} />
+                  <h3>Project Gallery</h3>
+                </div>
+                <div className="property-detail-card-content">
+                  {loadingGallery ? (
+                    <div className="gallery-loading">
+                      <p>Loading gallery...</p>
+                    </div>
+                  ) : galleryImages.length > 0 ? (
+                    <div className="gallery-grid-modern">
+                      {galleryImages.map((img) => (
+                        <div key={img.id} className="gallery-item-modern">
+                          <img 
+                            src={img.url} 
+                            alt={img.caption || 'Gallery image'} 
+                            className="gallery-image"
+                            onClick={() => window.open(img.url, '_blank')}
+                          />
+                          {img.caption && (
+                            <p className="gallery-caption">{img.caption}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="gallery-empty">
+                      <ImageIcon size={32} />
+                      <p>No gallery images yet</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="modal-actions">
@@ -2164,6 +2208,98 @@ function PropertyManagement() {
                   <p>No instalments data available</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Buyer and Broker Modal */}
+      {showAssignModal && selectedProperty && (
+        <div className="modal-overlay" onClick={() => setShowAssignModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h2>Assign Buyer and Broker</h2>
+              <button className="close-btn" onClick={() => {
+                setShowAssignModal(false)
+                setAssignData({ buyerId: '', brokerId: '' })
+                setSelectedProperty(null)
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  Property: <strong>Flat {selectedProperty.flatNo}</strong>
+                  {selectedProperty.buildingName && ` - ${selectedProperty.buildingName}`}
+                </div>
+                {selectedProperty.project?.name && (
+                  <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                    Project: <strong>{selectedProperty.project.name}</strong>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Buyer <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <SearchableSelect
+                  value={assignData.buyerId}
+                  onChange={(value) => setAssignData({ ...assignData, buyerId: value })}
+                  options={availableBuyers}
+                  placeholder="Select a buyer"
+                  required
+                  getOptionLabel={(buyer) => {
+                    const name = buyer.name || buyer.email || 'Unknown'
+                    const email = buyer.email && buyer.name ? ` (${buyer.email})` : ''
+                    return `${name}${email}`
+                  }}
+                  getOptionValue={(buyer) => buyer.id || buyer._id}
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Broker
+                </label>
+                <SearchableSelect
+                  value={assignData.brokerId || ''}
+                  onChange={(value) => setAssignData({ ...assignData, brokerId: value || '' })}
+                  options={[{ id: '', name: 'No broker (optional)', _id: '' }, ...availableBrokers]}
+                  placeholder="No broker (optional)"
+                  getOptionLabel={(broker) => {
+                    if (!broker.id && !broker._id) return 'No broker (optional)'
+                    const name = broker.name || broker.email || 'Unknown'
+                    const company = broker.company ? ` (${broker.company})` : ''
+                    const email = broker.email && (broker.name || broker.company) ? ` - ${broker.email}` : (broker.email ? ` (${broker.email})` : '')
+                    return `${name}${company}${email}`
+                  }}
+                  getOptionValue={(broker) => {
+                    if (!broker.id && !broker._id) return ''
+                    return broker.id || broker._id || ''
+                  }}
+                />
+              </div>
+
+              <div className="modal-actions">
+                <button 
+                  className="btn btn-outline" 
+                  onClick={() => {
+                    setShowAssignModal(false)
+                    setAssignData({ buyerId: '', brokerId: '' })
+                    setSelectedProperty(null)
+                  }}
+                  disabled={loadingAssign}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleSaveAssignment}
+                  disabled={loadingAssign || !assignData.buyerId}
+                >
+                  {loadingAssign ? 'Assigning...' : 'Assign'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

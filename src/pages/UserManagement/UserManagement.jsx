@@ -1249,19 +1249,71 @@ This is a sample document for demonstration purposes.`
       },
     },
     {
-      accessorKey: "broker",
+      accessorKey: "status",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Broker" />
+        <DataTableColumnHeader column={column} title="Status" />
       ),
       cell: ({ row }) => {
         const user = row.original
         return (
-          <div>
-            {user.broker !== 'N/A' ? (
-              <div className="broker-name" style={{ fontSize: '13px', lineHeight: '1.5' }}>{user.broker}</div>
-            ) : (
-              <span className="no-broker">No Broker</span>
-            )}
+          <span className={`status-badge ${user.status === 'Active' ? 'status-success' : 'status-error'}`}>
+            {user.status}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: "paymentStatus",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Payment Status" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <span className={`payment-badge ${
+            user.paymentStatus === 'Up to Date' ? 'payment-success' : 
+            user.paymentStatus === 'Pending' ? 'payment-warning' : 
+            'payment-error'
+          }`}>
+            {user.paymentStatus}
+          </span>
+        )
+      },
+    },
+    {
+      accessorKey: "documents",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Documents" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="docs-count">{user.documents || 0} docs</div>
+        )
+      },
+    },
+    {
+      accessorKey: "tickets",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Tickets" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="tickets-count">{user.tickets || 0}</div>
+        )
+      },
+    },
+    {
+      accessorKey: "address",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Address" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div className="user-meta" style={{ fontSize: '13px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {user.address || 'N/A'}
           </div>
         )
       },
@@ -1296,14 +1348,6 @@ This is a sample document for demonstration purposes.`
               <DropdownMenuItem onClick={() => handleResetPassword(user)}>
                 <Key className="mr-2 h-4 w-4" />
                 Reset Password
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleManageDocuments(user)}>
-                <FileText className="mr-2 h-4 w-4" />
-                Documents
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleManageNotifications(user)}>
-                <Bell className="mr-2 h-4 w-4" />
-                Notifications
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleDeleteUser(user.id)}>
@@ -1555,10 +1599,6 @@ This is a sample document for demonstration purposes.`
                 <span>{user.property}</span>
               </div>
               <div className="card-info-row">
-                <span className="card-label">Broker:</span>
-                <span>{user.broker !== 'N/A' ? user.broker : 'No Broker'}</span>
-              </div>
-              <div className="card-info-row">
                 <span className="card-label">Payment:</span>
                 <span className={`payment-badge ${
                   user.paymentStatus === 'Up to Date' ? 'payment-success' : 
@@ -1616,20 +1656,6 @@ This is a sample document for demonstration purposes.`
               )}
               <button 
                 className="btn btn-outline"
-                onClick={() => handleManageDocuments(user)}
-              >
-                <FileText size={16} style={{ marginRight: '4px' }} /> Documents
-              </button>
-            </div>
-            <div className="user-card-actions" style={{ marginTop: '8px' }}>
-              <button 
-                className="btn btn-outline"
-                onClick={() => handleManageNotifications(user)}
-              >
-                <Bell size={16} style={{ marginRight: '4px' }} /> Notify
-              </button>
-              <button 
-                className="btn btn-outline"
                 onClick={() => handleResetPassword(user)}
               >
                 <Key size={16} style={{ marginRight: '4px' }} /> Reset Password
@@ -1676,10 +1702,6 @@ This is a sample document for demonstration purposes.`
                 <div className="detail-item">
                   <label>Property</label>
                   <p>{selectedUser.property}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Broker</label>
-                  <p>{selectedUser.broker !== 'N/A' ? selectedUser.broker : 'No Broker Assigned'}</p>
                 </div>
                 <div className="detail-item">
                   <label>Payment Status</label>
@@ -1735,24 +1757,6 @@ This is a sample document for demonstration purposes.`
                     onClick={() => handleResetPassword(selectedUser)}
                   >
                     <Key size={16} style={{ marginRight: '4px' }} /> Reset Password
-                  </button>
-                  <button 
-                    className="btn btn-outline"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleManageDocuments(selectedUser);
-                    }}
-                  >
-                    <FileText size={16} style={{ marginRight: '4px' }} /> Manage Documents
-                  </button>
-                  <button 
-                    className="btn btn-outline"
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      handleManageNotifications(selectedUser);
-                    }}
-                  >
-                    <Bell size={16} style={{ marginRight: '4px' }} /> Send Notification
                   </button>
                 </div>
               </div>
