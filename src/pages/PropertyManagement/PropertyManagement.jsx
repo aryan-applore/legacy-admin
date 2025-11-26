@@ -17,7 +17,9 @@ import {
   User,
   Briefcase,
   Image as ImageIcon,
-  Hash
+  Hash,
+  FileText,
+  ExternalLink
 } from 'lucide-react'
 import PropertyForm from '../../components/PropertyForm/PropertyForm'
 import {
@@ -92,6 +94,8 @@ function PropertyManagement() {
   const [loadingProgress, setLoadingProgress] = useState(false)
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [savingProperty, setSavingProperty] = useState(false)
+  const [documents, setDocuments] = useState([])
+  const [loadingDocuments, setLoadingDocuments] = useState(false)
   const [showInstalmentsModal, setShowInstalmentsModal] = useState(false)
   const [instalmentsData, setInstalmentsData] = useState(null)
   const [loadingInstalments, setLoadingInstalments] = useState(false)
@@ -259,6 +263,9 @@ function PropertyManagement() {
     } else {
       setGalleryImages([])
     }
+    
+    // Fetch documents
+    await fetchPropertyDocuments(property.id)
   }
 
   const fetchPropertyProgress = async (propertyId) => {
@@ -289,6 +296,54 @@ function PropertyManagement() {
       setGalleryImages([])
     } finally {
       setLoadingGallery(false)
+    }
+  }
+
+  const fetchPropertyDocuments = async (propertyId) => {
+    try {
+      setLoadingDocuments(true)
+      const propertyResponse = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}`)
+      const propertyData = await propertyResponse.json()
+      
+      if (propertyData.success && propertyData.data) {
+        const property = propertyData.data
+        const buyerId = property.buyerId || property.buyer?.id || property.buyer?._id
+        
+        if (buyerId) {
+          const token = localStorage.getItem('adminToken')
+          const documentsResponse = await fetch(
+            `${API_BASE_URL}/documents?buyerId=${buyerId}&propertyId=${propertyId}&all=true`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            }
+          )
+          const documentsData = await documentsResponse.json()
+          
+          if (documentsData.success && documentsData.data) {
+            const docs = documentsData.data.documents || documentsData.data || []
+            setDocuments(docs.map(doc => ({
+              id: doc.id || doc._id,
+              name: doc.name,
+              type: doc.type,
+              fileName: doc.fileName,
+              fileSize: doc.fileSize,
+              downloadUrl: doc.downloadUrl || `/api/documents/${doc.id || doc._id}/download`,
+              uploadedAt: doc.uploadedAt || doc.createdAt
+            })))
+          } else {
+            setDocuments([])
+          }
+        } else {
+          setDocuments([])
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching documents:', err)
+      setDocuments([])
+    } finally {
+      setLoadingDocuments(false)
     }
   }
 
@@ -349,6 +404,9 @@ function PropertyManagement() {
     } else {
       setGalleryImages([])
     }
+    
+    // Fetch documents
+    await fetchPropertyDocuments(property.id)
     
     setShowEditPropertyModal(true)
   }
@@ -616,6 +674,83 @@ function PropertyManagement() {
     } catch (err) {
       console.error('Error uploading image:', err)
       showNotification('Failed to upload image', 'error')
+    }
+  }
+
+  const handleUploadDocument = async (file, documentType, documentTitle, description) => {
+    if (!selectedProperty || !file) return
+
+    try {
+      const propertyResponse = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}`)
+      const propertyData = await propertyResponse.json()
+      
+      if (!propertyData.success || !propertyData.data) {
+        showNotification('Failed to get property information', 'error')
+        return
+      }
+      
+      const property = propertyData.data
+      const buyerId = property.buyerId || property.buyer?.id || property.buyer?._id
+      
+      if (!buyerId) {
+        showNotification('Property must have an assigned buyer to upload documents', 'error')
+        return
+      }
+
+      const formData = new FormData()
+      formData.append('document', file)
+      formData.append('documentType', documentType)
+      formData.append('documentTitle', documentTitle)
+      formData.append('propertyId', selectedProperty.id)
+      formData.append('buyerId', buyerId)
+      if (description) {
+        formData.append('description', description)
+      }
+
+      const token = localStorage.getItem('adminToken')
+      const response = await fetch(`${API_BASE_URL}/documents`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Document uploaded successfully!', 'success')
+        await fetchPropertyDocuments(selectedProperty.id)
+      } else {
+        showNotification(data.error || 'Failed to upload document', 'error')
+      }
+    } catch (err) {
+      console.error('Error uploading document:', err)
+      showNotification('Failed to upload document', 'error')
+    }
+  }
+
+  const handleDeleteDocument = async (documentId) => {
+    if (!selectedProperty || !documentId) return
+
+    try {
+      const token = localStorage.getItem('adminToken')
+      const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showNotification('Document deleted successfully!', 'success')
+        await fetchPropertyDocuments(selectedProperty.id)
+      } else {
+        showNotification(data.error || 'Failed to delete document', 'error')
+      }
+    } catch (err) {
+      console.error('Error deleting document:', err)
+      showNotification('Failed to delete document', 'error')
     }
   }
 
@@ -1529,11 +1664,72 @@ function PropertyManagement() {
                 </div>
               </div>
 
+              {/* Documents Card */}
+              <div className="property-detail-card">
+                <div className="property-detail-card-header">
+                  <FileText size={18} />
+                  <h3>Documents</h3>
+                </div>
+                <div className="property-detail-card-content">
+                  {loadingDocuments ? (
+                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
+                      <p>Loading documents...</p>
+                    </div>
+                  ) : documents.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {documents.map((doc) => (
+                        <div key={doc.id || doc._id} style={{ 
+                          padding: '12px',
+                          backgroundColor: '#f9fafb',
+                          borderRadius: '8px',
+                          border: '1px solid #e5e7eb',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                              <FileText size={16} style={{ color: '#6b7280' }} />
+                              <p style={{ fontWeight: '500', margin: 0 }}>
+                                {doc.name || doc.fileName || 'Document'}
+                              </p>
+                            </div>
+                            <div style={{ fontSize: '0.875em', color: 'var(--text-secondary)', marginLeft: '24px' }}>
+                              {doc.type && <span style={{ textTransform: 'capitalize' }}>{doc.type}</span>}
+                              {doc.fileSize && <span> • {(doc.fileSize / 1024).toFixed(2)} KB</span>}
+                              {doc.uploadedAt && <span> • {new Date(doc.uploadedAt).toLocaleDateString()}</span>}
+                            </div>
+                          </div>
+                          {doc.downloadUrl && (
+                            <a
+                              href={doc.downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-outline"
+                              style={{ padding: '6px 12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <ExternalLink size={14} />
+                              View
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
+                      <FileText size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
+                      <p>No documents uploaded yet</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="modal-actions">
                 <button className="btn btn-outline" onClick={() => {
                   setShowDetailsModal(false)
                   setProgressData(null)
                   setGalleryImages([])
+                  setDocuments([])
                 }}>Close</button>
               </div>
             </div>
@@ -1758,6 +1954,7 @@ function PropertyManagement() {
               <button className="close-btn" onClick={() => {
                 setShowEditPropertyModal(false)
                 setGalleryImages([])
+                setDocuments([])
                 setEditPropertyData(null)
                 setSelectedProperty(null)
               }}>×</button>
@@ -1772,6 +1969,10 @@ function PropertyManagement() {
                 galleryImages={galleryImages}
                 loadingGallery={loadingGallery}
                 onUploadGalleryImage={handleUploadGalleryImage}
+                documents={documents}
+                loadingDocuments={loadingDocuments}
+                onUploadDocument={handleUploadDocument}
+                onDeleteDocument={handleDeleteDocument}
               />
               <div className="modal-actions" style={{ marginTop: '24px' }}>
                 <button 
@@ -1779,6 +1980,7 @@ function PropertyManagement() {
                   onClick={() => {
                     setShowEditPropertyModal(false)
                     setGalleryImages([])
+                    setDocuments([])
                     setEditPropertyData(null)
                     setSelectedProperty(null)
                   }}

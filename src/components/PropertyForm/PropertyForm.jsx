@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FileText, ExternalLink, Trash2 } from 'lucide-react'
 
 function PropertyForm({ 
   propertyData, 
@@ -8,11 +9,20 @@ function PropertyForm({
   showGallery = false,
   galleryImages = [],
   loadingGallery = false,
-  onUploadGalleryImage
+  onUploadGalleryImage,
+  documents = [],
+  loadingDocuments = false,
+  onUploadDocument,
+  onDeleteDocument
 }) {
   const [galleryFile, setGalleryFile] = useState(null)
   const [galleryCaption, setGalleryCaption] = useState('')
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [documentFile, setDocumentFile] = useState(null)
+  const [documentType, setDocumentType] = useState('')
+  const [documentTitle, setDocumentTitle] = useState('')
+  const [documentDescription, setDocumentDescription] = useState('')
+  const [uploadingDocument, setUploadingDocument] = useState(false)
 
   // Use propertyData directly - it's controlled by parent
   const formData = propertyData || {
@@ -93,6 +103,39 @@ function PropertyForm({
         console.error('Error uploading image:', error)
       } finally {
         setUploadingImage(false)
+      }
+    }
+  }
+
+  const handleDocumentFileChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB')
+        e.target.value = ''
+        return
+      }
+      setDocumentFile(file)
+    }
+  }
+
+  const handleUploadDocument = async () => {
+    if (documentFile && documentType && documentTitle && onUploadDocument) {
+      setUploadingDocument(true)
+      try {
+        await onUploadDocument(documentFile, documentType, documentTitle, documentDescription)
+        setDocumentFile(null)
+        setDocumentType('')
+        setDocumentTitle('')
+        setDocumentDescription('')
+        const fileInput = document.getElementById('document-file-input')
+        if (fileInput) {
+          fileInput.value = ''
+        }
+      } catch (error) {
+        console.error('Error uploading document:', error)
+      } finally {
+        setUploadingDocument(false)
       }
     }
   }
@@ -519,6 +562,156 @@ function PropertyForm({
             >
               {uploadingImage ? 'Uploading...' : 'Upload Gallery Image'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Documents Section (only in edit mode) */}
+      {isEditMode && (
+        <div className="details-section" style={{ marginTop: '24px' }}>
+          <h4 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={18} />
+            Documents
+          </h4>
+          {loadingDocuments ? (
+            <p style={{ color: 'var(--text-secondary)' }}>Loading documents...</p>
+          ) : documents.length > 0 ? (
+            <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {documents.map((doc) => (
+                <div key={doc.id || doc._id} style={{ 
+                  padding: '12px',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <FileText size={16} style={{ color: '#6b7280' }} />
+                      <p style={{ fontWeight: '500', margin: 0 }}>
+                        {doc.name || doc.fileName || 'Document'}
+                      </p>
+                    </div>
+                    <div style={{ fontSize: '0.875em', color: 'var(--text-secondary)', marginLeft: '24px' }}>
+                      {doc.type && <span style={{ textTransform: 'capitalize' }}>{doc.type}</span>}
+                      {doc.fileSize && <span> • {(doc.fileSize / 1024).toFixed(2)} KB</span>}
+                      {doc.uploadedAt && <span> • {new Date(doc.uploadedAt).toLocaleDateString()}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {doc.downloadUrl && (
+                      <a
+                        href={doc.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-outline"
+                        style={{ padding: '6px 12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <ExternalLink size={14} />
+                        View
+                      </a>
+                    )}
+                    {onDeleteDocument && (
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => {
+                          if (window.confirm('Are you sure you want to delete this document?')) {
+                            onDeleteDocument(doc.id || doc._id)
+                          }
+                        }}
+                        style={{ padding: '6px 12px', fontSize: '0.875rem', color: '#ef4444', borderColor: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>No documents uploaded yet</p>
+          )}
+          
+          <div style={{ marginTop: '12px', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+            <h5 style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: '600' }}>Upload New Document</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                  Document Type *
+                </label>
+                <select
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value)}
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.875rem' }}
+                  required
+                >
+                  <option value="">Select Document Type</option>
+                  <option>Welcome Letter</option>
+                  <option>Sale Agreement</option>
+                  <option>Payment Receipt</option>
+                  <option>Invoice</option>
+                  <option>Floor Plan</option>
+                  <option>Construction Update</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                  Document Title *
+                </label>
+                <input
+                  type="text"
+                  value={documentTitle}
+                  onChange={(e) => setDocumentTitle(e.target.value)}
+                  placeholder="e.g., Welcome Letter - 2024"
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.875rem' }}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                  Upload File *
+                </label>
+                <input
+                  id="document-file-input"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  onChange={handleDocumentFileChange}
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '0.875rem' }}
+                />
+                {documentFile && (
+                  <p style={{ fontSize: '0.75em', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Selected: {documentFile.name}
+                  </p>
+                )}
+                <small style={{ fontSize: '0.75em', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                  Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 10MB)
+                </small>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.875rem', fontWeight: '500' }}>
+                  Description (optional)
+                </label>
+                <textarea
+                  value={documentDescription}
+                  onChange={(e) => setDocumentDescription(e.target.value)}
+                  placeholder="Add any notes or description about this document"
+                  rows="3"
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.875rem', resize: 'vertical' }}
+                />
+              </div>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleUploadDocument}
+                disabled={!documentFile || !documentType || !documentTitle || uploadingDocument}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {uploadingDocument ? 'Uploading...' : 'Upload Document'}
+              </button>
+            </div>
           </div>
         </div>
       )}
