@@ -10,7 +10,8 @@ import {
   Code,
   Building2,
   Package,
-  ShoppingCart
+  ShoppingCart,
+  UserCheck
 } from 'lucide-react'
 import './Sidebar.css'
 
@@ -25,6 +26,11 @@ function Sidebar({ isOpen, onClose }) {
       path: '/user-management',
       name: 'User Management',
       icon: <Users size={20} />
+    },
+    {
+      path: '/all-users',
+      name: 'All Users',
+      icon: <UserCheck size={20} />
     },
     {
       path: '/property-management',
@@ -69,6 +75,11 @@ function Sidebar({ isOpen, onClose }) {
     {
       path: '/app-api-test',
       name: 'App API Test',
+      icon: <Code size={20} />
+    },
+    {
+      path: '/support-api-test',
+      name: 'Support API Test',
       icon: <Code size={20} />
     }
   ]

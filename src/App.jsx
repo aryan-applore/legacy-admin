@@ -6,12 +6,14 @@ import Dashboard from './pages/Dashboard/Dashboard'
 import UserManagement from './pages/UserManagement/UserManagement'
 import BrokerManagement from './pages/BrokerManagement/BrokerManagement'
 import SupplierManagement from './pages/SupplierManagement/SupplierManagement'
+import AllUsers from './pages/AllUsers/AllUsers'
 import PropertyManagement from './pages/PropertyManagement/PropertyManagement'
 import ProductManagement from './pages/ProductManagement/ProductManagement'
 import OrderManagement from './pages/OrderManagement/OrderManagement'
 import Documents from './pages/Documents/Documents'
 import Support from './pages/Support/Support'
 import AppApiTest from './pages/AppApiTest/AppApiTest'
+import SupportApiTest from './pages/SupportApiTest/SupportApiTest'
 import ProjectManagement from './pages/ProjectManagement/ProjectManagement'
 
 function App() {
@@ -90,6 +92,7 @@ function App() {
         <Route path="/" element={<Layout onLogout={handleLogout} />}>
           <Route index element={<Dashboard />} />
           <Route path="user-management" element={<UserManagement />} />
+          <Route path="all-users" element={<AllUsers />} />
           <Route path="property-management" element={<PropertyManagement />} />
           <Route path="broker-management" element={<BrokerManagement />} />
           <Route path="supplier-management" element={<SupplierManagement />} />
@@ -99,6 +102,7 @@ function App() {
           <Route path="support" element={<Support />} />
           <Route path="project-management" element={<ProjectManagement />} />
           <Route path="app-api-test" element={<AppApiTest />} />
+          <Route path="support-api-test" element={<SupportApiTest />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
