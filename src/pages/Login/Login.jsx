@@ -30,8 +30,9 @@ function Login({ onLogin }) {
       const data = await response.json()
 
       if (data.success && data.token) {
-        // Check if account has admin role
-        if (data.account && data.account.role === 'admin') {
+        // Allow admin, buyer, broker, and supplier roles
+        const allowedRoles = ['admin', 'buyer', 'broker', 'supplier']
+        if (data.account && allowedRoles.includes(data.account.role)) {
           // Store token in localStorage
           localStorage.setItem('adminToken', data.token)
           localStorage.setItem('adminUser', JSON.stringify(data.account))
@@ -41,7 +42,7 @@ function Login({ onLogin }) {
             onLogin(data.token, data.account)
           }
         } else {
-          setError('Access denied. Admin role required.')
+          setError('Access denied. Invalid account type.')
           setLoading(false)
         }
       } else {

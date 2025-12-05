@@ -264,6 +264,31 @@
   background: var(--background-hover, #f5f5f5);
 }
 
+/* Permissions Button */
+.btn-permissions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-permissions:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.btn-permissions svg {
+  flex-shrink: 0;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .all-users-page {

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout/Layout'
+import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 import Login from './pages/Login/Login'
 import Dashboard from './pages/Dashboard/Dashboard'
 import UserManagement from './pages/UserManagement/UserManagement'
@@ -29,8 +30,9 @@ function App() {
       if (token && adminUser) {
         try {
           const user = JSON.parse(adminUser)
-          // Verify user has admin role
-          if (user.role === 'admin') {
+          // Verify user has allowed role
+          const allowedRoles = ['admin', 'buyer', 'broker', 'supplier']
+          if (allowedRoles.includes(user.role)) {
             setIsAuthenticated(true)
           } else {
             // Clear invalid auth
@@ -90,19 +92,71 @@ function App() {
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/" element={<Layout onLogout={handleLogout} />}>
-          <Route index element={<Dashboard />} />
-          <Route path="user-management" element={<UserManagement />} />
-          <Route path="all-users" element={<AllUsers />} />
-          <Route path="property-management" element={<PropertyManagement />} />
-          <Route path="broker-management" element={<BrokerManagement />} />
-          <Route path="supplier-management" element={<SupplierManagement />} />
-          <Route path="product-management" element={<ProductManagement />} />
-          <Route path="order-management" element={<OrderManagement />} />
-          <Route path="documents" element={<Documents />} />
-          <Route path="support" element={<Support />} />
-          <Route path="project-management" element={<ProjectManagement />} />
-          <Route path="app-api-test" element={<AppApiTest />} />
-          <Route path="support-api-test" element={<SupportApiTest />} />
+          <Route index element={
+            <ProtectedRoute requiredPermission="dashboard">
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="user-management" element={
+            <ProtectedRoute requiredPermission="user-management">
+              <UserManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="all-users" element={
+            <ProtectedRoute requiredPermission="all-users">
+              <AllUsers />
+            </ProtectedRoute>
+          } />
+          <Route path="property-management" element={
+            <ProtectedRoute requiredPermission="property-management">
+              <PropertyManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="broker-management" element={
+            <ProtectedRoute requiredPermission="broker-management">
+              <BrokerManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="supplier-management" element={
+            <ProtectedRoute requiredPermission="supplier-management">
+              <SupplierManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="product-management" element={
+            <ProtectedRoute requiredPermission="product-management">
+              <ProductManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="order-management" element={
+            <ProtectedRoute requiredPermission="order-management">
+              <OrderManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="documents" element={
+            <ProtectedRoute requiredPermission="documents">
+              <Documents />
+            </ProtectedRoute>
+          } />
+          <Route path="support" element={
+            <ProtectedRoute requiredPermission="support">
+              <Support />
+            </ProtectedRoute>
+          } />
+          <Route path="project-management" element={
+            <ProtectedRoute requiredPermission="project-management">
+              <ProjectManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="app-api-test" element={
+            <ProtectedRoute requiredPermission="app-api-test">
+              <AppApiTest />
+            </ProtectedRoute>
+          } />
+          <Route path="support-api-test" element={
+            <ProtectedRoute requiredPermission="support-api-test">
+              <SupportApiTest />
+            </ProtectedRoute>
+          } />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

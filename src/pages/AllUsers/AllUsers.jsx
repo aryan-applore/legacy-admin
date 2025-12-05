@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import './AllUsers.css'
-import { Users, Handshake, Factory } from 'lucide-react'
+import { Users, Handshake, Factory, Shield } from 'lucide-react'
+import PermissionManager from '../../components/PermissionManager/PermissionManager'
 import {
   flexRender,
   getCoreRowModel,
@@ -31,6 +32,8 @@ function AllUsers() {
   const [error, setError] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all') // 'all', 'user', 'broker', 'supplier'
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [showPermissionManager, setShowPermissionManager] = useState(false)
 
   // Table state
   const [sorting, setSorting] = useState([])
@@ -260,6 +263,26 @@ function AllUsers() {
         </span>
       ),
     },
+    {
+      id: "actions",
+      header: "Permissions",
+      cell: ({ row }) => {
+        const item = row.original
+        return (
+          <button
+            className="btn-permissions"
+            onClick={() => {
+              setSelectedUser(item)
+              setShowPermissionManager(true)
+            }}
+            title="Manage Permissions"
+          >
+            <Shield size={16} />
+            <span>Manage</span>
+          </button>
+        )
+      },
+    },
   ], [])
 
   const table = useReactTable({
@@ -279,8 +302,24 @@ function AllUsers() {
     },
   })
 
+  const handlePermissionUpdate = (updatedUser) => {
+    // Refresh the data after permission update
+    // You can either refetch or update the local state
+    console.log('Permissions updated for user:', updatedUser)
+  }
+
   return (
     <div className="all-users-page">
+      {showPermissionManager && selectedUser && (
+        <PermissionManager
+          user={selectedUser}
+          onClose={() => {
+            setShowPermissionManager(false)
+            setSelectedUser(null)
+          }}
+          onUpdate={handlePermissionUpdate}
+        />
+      )}
       <div className="page-header">
         <div>
           <h1 className="page-title-main">All Users</h1>
