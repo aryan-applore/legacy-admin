@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import { useApiFetch } from '../../lib/apiHelpers'
 import './Login.css'
 
 // API Base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
+
 
 function Login({ onLogin }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const { fetchData } = useApiFetch()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -16,30 +18,25 @@ function Login({ onLogin }) {
     setLoading(true)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const data = await fetchData('/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password: password
         })
       })
 
-      const data = await response.json()
-
-      if (data.success && data.token) {
+      if (data.success && data.data.token) {
         // Allow admin, buyer, broker, and supplier roles
         const allowedRoles = ['admin', 'buyer', 'broker', 'supplier']
-        if (data.account && allowedRoles.includes(data.account.role)) {
+        if (data.data.account && allowedRoles.includes(data.data.account.role)) {
           // Store token in localStorage
-          localStorage.setItem('adminToken', data.token)
-          localStorage.setItem('adminUser', JSON.stringify(data.account))
+          localStorage.setItem('adminToken', data.data.token)
+          localStorage.setItem('adminUser', JSON.stringify(data.data.account))
           
           // Call onLogin callback
           if (onLogin) {
-            onLogin(data.token, data.account)
+            onLogin(data.data.token, data.data.account)
           }
         } else {
           setError('Access denied. Invalid account type.')

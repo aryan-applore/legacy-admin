@@ -30,18 +30,19 @@ function ProtectedRoute({ children, requiredPermission }) {
   if (userPermissions.length > 0) {
     const permissionToPathMap = {
       'dashboard': '/',
-      'user-management': '/user-management',
-      'all-users': '/all-users',
-      'property-management': '/property-management',
-      'broker-management': '/broker-management',
-      'supplier-management': '/supplier-management',
-      'product-management': '/product-management',
-      'order-management': '/order-management',
-      'project-management': '/project-management',
-      'documents': '/documents',
+      'users': '/users',
+      'buyers': '/users/buyers',
+      'brokers': '/users/brokers',
+      'suppliers': '/users/suppliers',
+      'project-management': '/projects',
+      'property-management': '/projects/properties',
+      'marketing': '/projects/marketing',
+      'documents': '/projects/documents',
+      'product-management': '/product',
+      'order-management': '/order',
       'support': '/support',
-      'app-api-test': '/app-api-test',
-      'support-api-test': '/support-api-test'
+      'notifications': '/notifications',
+      'profile': '/profile'
     }
     
     // Find first available page user has access to

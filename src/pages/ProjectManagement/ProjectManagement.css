@@ -825,6 +825,15 @@
   color: white;
 }
 
+/* Clickable table rows */
+[data-state] {
+  transition: background-color 0.2s ease;
+}
+
+[data-state]:hover {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
   .filters-grid {

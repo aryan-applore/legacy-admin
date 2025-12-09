@@ -4,7 +4,7 @@ import Layout from './components/Layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 import Login from './pages/Login/Login'
 import Dashboard from './pages/Dashboard/Dashboard'
-import UserManagement from './pages/UserManagement/UserManagement'
+import BuyerManagement from './pages/BuyerManagement/BuyerManagement'
 import BrokerManagement from './pages/BrokerManagement/BrokerManagement'
 import SupplierManagement from './pages/SupplierManagement/SupplierManagement'
 import AllUsers from './pages/AllUsers/AllUsers'
@@ -13,9 +13,10 @@ import ProductManagement from './pages/ProductManagement/ProductManagement'
 import OrderManagement from './pages/OrderManagement/OrderManagement'
 import Documents from './pages/Documents/Documents'
 import Support from './pages/Support/Support'
-import AppApiTest from './pages/AppApiTest/AppApiTest'
-import SupportApiTest from './pages/SupportApiTest/SupportApiTest'
 import ProjectManagement from './pages/ProjectManagement/ProjectManagement'
+import NotificationManagement from './pages/NotificationManagement/NotificationManagement'
+import MarketingManagement from './pages/MarketingManagement/MarketingManagement'
+import AdminProfile from './pages/AdminProfile/AdminProfile'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -97,44 +98,58 @@ function App() {
               <Dashboard />
             </ProtectedRoute>
           } />
-          <Route path="user-management" element={
-            <ProtectedRoute requiredPermission="user-management">
-              <UserManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="all-users" element={
-            <ProtectedRoute requiredPermission="all-users">
-              <AllUsers />
-            </ProtectedRoute>
-          } />
-          <Route path="property-management" element={
-            <ProtectedRoute requiredPermission="property-management">
-              <PropertyManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="broker-management" element={
-            <ProtectedRoute requiredPermission="broker-management">
-              <BrokerManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="supplier-management" element={
-            <ProtectedRoute requiredPermission="supplier-management">
-              <SupplierManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="product-management" element={
+          <Route path="users">
+            <Route index element={
+              <ProtectedRoute requiredPermission="users">
+                <AllUsers />
+              </ProtectedRoute>
+            } />
+            <Route path="buyers" element={
+              <ProtectedRoute requiredPermission="buyers">
+                <BuyerManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="brokers" element={
+              <ProtectedRoute requiredPermission="brokers">
+                <BrokerManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="suppliers" element={
+              <ProtectedRoute requiredPermission="suppliers">
+                <SupplierManagement />
+              </ProtectedRoute>
+            } />
+          </Route>
+          <Route path="projects">
+            <Route index element={
+              <ProtectedRoute requiredPermission="project-management">
+                <ProjectManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="properties" element={
+              <ProtectedRoute requiredPermission="property-management">
+                <PropertyManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="marketing" element={
+              <ProtectedRoute requiredPermission="marketing">
+                <MarketingManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="documents" element={
+              <ProtectedRoute requiredPermission="documents">
+                <Documents />
+              </ProtectedRoute>
+            } />
+          </Route>
+          <Route path="product" element={
             <ProtectedRoute requiredPermission="product-management">
               <ProductManagement />
             </ProtectedRoute>
           } />
-          <Route path="order-management" element={
+          <Route path="order" element={
             <ProtectedRoute requiredPermission="order-management">
               <OrderManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="documents" element={
-            <ProtectedRoute requiredPermission="documents">
-              <Documents />
             </ProtectedRoute>
           } />
           <Route path="support" element={
@@ -142,19 +157,14 @@ function App() {
               <Support />
             </ProtectedRoute>
           } />
-          <Route path="project-management" element={
-            <ProtectedRoute requiredPermission="project-management">
-              <ProjectManagement />
+          <Route path="notifications" element={
+            <ProtectedRoute requiredPermission="notifications">
+              <NotificationManagement />
             </ProtectedRoute>
           } />
-          <Route path="app-api-test" element={
-            <ProtectedRoute requiredPermission="app-api-test">
-              <AppApiTest />
-            </ProtectedRoute>
-          } />
-          <Route path="support-api-test" element={
-            <ProtectedRoute requiredPermission="support-api-test">
-              <SupportApiTest />
+          <Route path="profile" element={
+            <ProtectedRoute requiredPermission="profile">
+              <AdminProfile />
             </ProtectedRoute>
           } />
         </Route>

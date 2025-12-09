@@ -55,20 +55,30 @@ function ProductManagement() {
   const [columnFilters, setColumnFilters] = useState([])
   const [columnVisibility, setColumnVisibility] = useState({})
 
-  // Load products and suppliers
+  const [categories, setCategories] = useState([])
+
+  // Load products, suppliers, and categories
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
       try {
-        const [productsRes, suppliersRes] = await Promise.all([
+        const [productsRes, usersRes, categoriesRes] = await Promise.all([
           fetchData('/products'),
-          fetchData('/suppliers')
+          fetchData('/users'),
+          fetchData('/products/categories')
         ])
         if (productsRes.success) {
           setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
         }
-        if (suppliersRes.success) {
-          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+        if (usersRes.success && usersRes.data) {
+          // Filter suppliers from unified users response
+          const suppliersData = usersRes.data.filter(user => 
+            user.type === 'supplier' || user.role === 'supplier'
+          )
+          setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
+        }
+        if (categoriesRes.success) {
+          setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : [])
         }
       } catch (error) {
         setError('Failed to load data')
@@ -80,21 +90,12 @@ function ProductManagement() {
     loadData()
   }, [])
 
-  // Get unique categories
-  const categories = useMemo(() => {
-    const cats = products
-      .map(p => p.category)
-      .filter((cat, index, self) => cat && self.indexOf(cat) === index)
-    return cats.sort()
-  }, [products])
-
   // Filtered products
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const searchLower = searchQuery.toLowerCase()
       const matchesSearch = 
         product.name?.toLowerCase().includes(searchLower) ||
-        product.sku?.toLowerCase().includes(searchLower) ||
         product.description?.toLowerCase().includes(searchLower)
 
       const supplierId = product.supplierId?._id || product.supplierId
@@ -103,8 +104,9 @@ function ProductManagement() {
       const matchesSupplier = 
         filterSupplier === 'All Suppliers' || supplierName === filterSupplier
 
+      const categoryName = product.category?.name || product.category
       const matchesCategory = 
-        filterCategory === 'All Categories' || product.category === filterCategory
+        filterCategory === 'All Categories' || categoryName === filterCategory
 
       const matchesLowStock = 
         !filterLowStock || (product.currentStock <= product.lowStockThreshold)
@@ -133,7 +135,6 @@ function ProductManagement() {
     e.preventDefault()
     const formData = new FormData(e.target)
     const productData = {
-      sku: formData.get('sku'),
       name: formData.get('name'),
       description: formData.get('description'),
       supplierId: formData.get('supplierId'),
@@ -222,7 +223,6 @@ function ProductManagement() {
             </div>
             <div>
               <div className="product-name">{product.name}</div>
-              <div className="product-meta">SKU: {product.sku}</div>
               <div className="product-meta">{supplier?.company || supplier?.name || 'N/A'}</div>
             </div>
           </div>
@@ -234,6 +234,10 @@ function ProductManagement() {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Category" />
       ),
+      cell: ({ row }) => {
+        const cat = row.original.category
+        return cat?.name || cat || 'N/A'
+      }
     },
     {
       accessorKey: "currentStock",
@@ -261,6 +265,17 @@ function ProductManagement() {
         <DataTableColumnHeader column={column} title="Threshold" />
       ),
       cell: ({ row }) => `${row.original.lowStockThreshold} ${row.original.unit}`,
+    },
+    {
+      accessorKey: "price",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Price" />
+      ),
+      cell: ({ row }) => {
+        const p = row.original
+        const price = p.pricePerUnit || p.price || 0
+        return `₹${price.toLocaleString()}`
+      },
     },
     {
       id: "actions",
@@ -371,7 +386,7 @@ function ProductManagement() {
       <div className="card filters-section">
         <div className="filters-grid">
           <Input
-            placeholder="Search by name, SKU, description..."
+            placeholder="Search by name, description..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input-full"
@@ -393,7 +408,7 @@ function ProductManagement() {
           >
             <option>All Categories</option>
             {categories.map((cat) => (
-              <option key={cat}>{cat}</option>
+              <option key={cat._id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
           <label className="filter-checkbox">
@@ -481,10 +496,7 @@ function ProductManagement() {
             <div className="modal-body">
               <form onSubmit={handleSaveProduct}>
                 <div className="form-row">
-                  <div className="form-group">
-                    <label>SKU *</label>
-                    <input type="text" name="sku" defaultValue={selectedProduct?.sku} required />
-                  </div>
+
                   <div className="form-group">
                     <label>Name *</label>
                     <input type="text" name="name" defaultValue={selectedProduct?.name} required />
@@ -506,12 +518,12 @@ function ProductManagement() {
                   </div>
                   <div className="form-group">
                     <label>Category</label>
-                    <input type="text" name="category" list="categories" defaultValue={selectedProduct?.category} />
-                    <datalist id="categories">
+                    <select name="category" defaultValue={selectedProduct?.category?._id || selectedProduct?.category} className="w-full p-2 border rounded">
+                      <option value="">Select Category</option>
                       {categories.map((cat) => (
-                        <option key={cat} value={cat} />
+                        <option key={cat._id} value={cat._id}>{cat.name}</option>
                       ))}
-                    </datalist>
+                    </select>
                   </div>
                 </div>
                 <div className="form-row">

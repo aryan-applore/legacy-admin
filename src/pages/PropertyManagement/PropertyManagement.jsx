@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useApiFetch, useNotification } from '../../lib/apiHelpers'
 import './PropertyManagement.css'
 import { 
   Home, 
@@ -43,10 +44,9 @@ import {
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 
-// API Base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
 
-function PropertyManagement() {
+
+function  PropertyManagement() {
   const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -74,9 +74,11 @@ function PropertyManagement() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterProject, setFilterProject] = useState('All Projects')
   const [filterStatus, setFilterStatus] = useState('All Status')
-  const [notification, setNotification] = useState(null)
 
-  // Projects list for filter (extracted from properties)
+  const [notification, showNotification] = useNotification()
+  const { fetchData } = useApiFetch()
+
+  // Projects list for filter (fetched from API)
   const [projects, setProjects] = useState([])
 
   // Helper function to format location as string
@@ -118,23 +120,26 @@ function PropertyManagement() {
     }
   }
 
-  // Extract unique projects from properties list for filter
+  // Fetch projects from API
   useEffect(() => {
-    if (properties.length > 0) {
-      const projectMap = new Map()
-      properties.forEach(property => {
-        if (property.project && property.project.id) {
-          if (!projectMap.has(property.project.id)) {
-            projectMap.set(property.project.id, {
-              id: property.project.id,
-              name: property.project.name
-            })
-          }
+    const fetchProjects = async () => {
+      try {
+        const result = await fetchData('/projects?simple=true')
+        if (result.success && result.data) {
+          const projectsList = Array.isArray(result.data) ? result.data : []
+          setProjects(projectsList)
+        } else {
+          console.error('Failed to fetch projects:', result.error)
+          setProjects([])
         }
-      })
-      setProjects(Array.from(projectMap.values()))
+      } catch (err) {
+        console.error('Error fetching projects:', err)
+        setProjects([])
+      }
     }
-  }, [properties])
+
+    fetchProjects()
+  }, [])
 
   // Fetch properties from API
   useEffect(() => {
@@ -142,8 +147,8 @@ function PropertyManagement() {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch(`${API_BASE_URL}/admin/properties`)
-        const data = await response.json()
+
+        const data = await fetchData('/properties')
         
         if (data.success && data.data) {
           const propertiesList = data.data.properties || []
@@ -202,10 +207,7 @@ function PropertyManagement() {
   const [columnFilters, setColumnFilters] = useState([])
   const [columnVisibility, setColumnVisibility] = useState({})
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
-  }
+
 
   const handleViewDetails = async (property) => {
     setSelectedProperty(property)
@@ -227,8 +229,8 @@ function PropertyManagement() {
   const fetchPropertyProgress = async (propertyId) => {
     try {
       setLoadingProgress(true)
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}/progress`)
-      const data = await response.json()
+
+      const data = await fetchData(`/properties/${propertyId}/progress`)
       if (data.success) {
         setProgressData(data.data)
       }
@@ -242,8 +244,8 @@ function PropertyManagement() {
   const fetchPropertyGallery = async (propertyId) => {
     try {
       setLoadingGallery(true)
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}/gallery`)
-      const data = await response.json()
+
+      const data = await fetchData(`/properties/${propertyId}/gallery`)
       if (data.success) {
         setGalleryImages(data.data.images || [])
       }
@@ -382,15 +384,12 @@ function PropertyManagement() {
       setSavingProperty(true)
       const updatePayload = preparePropertyPayload(editPropertyData, true)
 
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}`, {
+
+
+      const data = await fetchData(`/properties/${selectedProperty.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(updatePayload)
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Property updated successfully!', 'success')
         setShowEditPropertyModal(false)
@@ -419,15 +418,12 @@ function PropertyManagement() {
       setSavingProperty(true)
       const createPayload = preparePropertyPayload(addPropertyData, false)
 
-      const response = await fetch(`${API_BASE_URL}/admin/properties`, {
+
+
+      const data = await fetchData('/properties', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(createPayload)
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Property created successfully!', 'success')
         setShowAddPropertyModal(false)
@@ -478,14 +474,10 @@ function PropertyManagement() {
 
     try {
       showNotification('Deleting property...', 'info')
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      })
 
-      const data = await response.json()
+      const data = await fetchData(`/properties/${propertyId}`, {
+        method: 'DELETE'
+      })
       if (data.success) {
         showNotification('Property deleted successfully!', 'success')
         // Refresh properties list
@@ -503,19 +495,15 @@ function PropertyManagement() {
     if (!selectedProperty || !progressData) return
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/progress`, {
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/progress`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           overallProgress: progressData.overallProgress,
           currentStage: progressData.currentStage,
           stages: progressData.stages
         })
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Progress updated successfully!', 'success')
         setShowEditProgressModal(false)
@@ -563,13 +551,14 @@ function PropertyManagement() {
         formData.append('caption', caption)
       }
 
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/gallery`, {
-        method: 'POST',
-        body: formData
-        // Don't set Content-Type header - browser will set it automatically with boundary for FormData
-      })
 
-      const data = await response.json()
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/gallery`, {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type header - browser will set it automatically with boundary for FormData
+        headers: {} // Override default headers to let browser set Content-Type
+      })
       if (data.success) {
         showNotification('Image uploaded successfully!', 'success')
         await fetchPropertyGallery(selectedProperty.id)
@@ -615,8 +604,8 @@ function PropertyManagement() {
   const fetchPropertyInstalments = async (propertyId) => {
     try {
       setLoadingInstalments(true)
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}/instalments`)
-      const data = await response.json()
+
+      const data = await fetchData(`/properties/${propertyId}/instalments`)
       if (data.success) {
         setInstalmentsData(data.data)
       } else {
@@ -637,9 +626,9 @@ function PropertyManagement() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments`, {
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/instalments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instalments: [{
             number: parseInt(newInstalment.number),
@@ -649,8 +638,6 @@ function PropertyManagement() {
           }]
         })
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Instalment added successfully!', 'success')
         setNewInstalment({ number: '', dueDate: '', amount: '' })
@@ -668,13 +655,11 @@ function PropertyManagement() {
 
   const handleUpdateInstalment = async (instalmentId, updateData) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/${instalmentId}`, {
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/instalments/${instalmentId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Instalment updated successfully!', 'success')
         setEditingInstalment(null)
@@ -696,11 +681,10 @@ function PropertyManagement() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/${instalmentId}`, {
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/instalments/${instalmentId}`, {
         method: 'DELETE'
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Instalment deleted successfully!', 'success')
         await fetchPropertyInstalments(selectedProperty.id)
@@ -717,11 +701,10 @@ function PropertyManagement() {
 
   const handleMarkPaid = async (instalmentId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/${instalmentId}/mark-paid`, {
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/instalments/${instalmentId}/mark-paid`, {
         method: 'POST'
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Instalment marked as paid!', 'success')
         await fetchPropertyInstalments(selectedProperty.id)
@@ -743,17 +726,15 @@ function PropertyManagement() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}/instalments/generate`, {
+
+      const data = await fetchData(`/properties/${selectedProperty.id}/instalments/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           count: parseInt(generateData.count),
           startDate: generateData.startDate,
           intervalDays: parseInt(generateData.intervalDays) || 30
         })
       })
-
-      const data = await response.json()
       if (data.success) {
         showNotification('Instalments generated successfully!', 'success')
         setShowGenerateModal(false)
@@ -770,13 +751,13 @@ function PropertyManagement() {
     }
   }
 
-  // Get unique project names for filter
+  // Get unique project names for filter from fetched projects
   const uniqueProjects = useMemo(() => {
-    const projectNames = properties
-      .map(p => p.project?.name || getProjectName(p))
+    const projectNames = projects
+      .map(p => p.name)
       .filter((name, index, self) => name && name !== 'N/A' && self.indexOf(name) === index)
     return projectNames.sort()
-  }, [properties, projects])
+  }, [projects])
 
   // Normalize current stage for display (matches radio button values)
   const getDisplayStage = (stage) => {

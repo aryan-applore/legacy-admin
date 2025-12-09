@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Shield, Check } from 'lucide-react'
 import './PermissionManager.css'
-import { API_BASE_URL } from '../../lib/apiHelpers'
+import { useApiFetch } from '../../lib/apiHelpers'
 
 function PermissionManager({ user, onClose, onUpdate }) {
   const [availablePermissions, setAvailablePermissions] = useState([])
@@ -9,6 +9,7 @@ function PermissionManager({ user, onClose, onUpdate }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const { fetchData } = useApiFetch()
 
   useEffect(() => {
     fetchPermissions()
@@ -18,30 +19,17 @@ function PermissionManager({ user, onClose, onUpdate }) {
     try {
       setLoading(true)
       setError(null)
-      const token = localStorage.getItem('adminToken')
 
       // Fetch available permissions
-      const availableResponse = await fetch(`${API_BASE_URL}/permissions/available`, {
-        headers: {
-          'Authorization': `Bearer ${token || ''}`
-        }
-      })
-      const availableData = await availableResponse.json()
-
-      if (availableData.success) {
-        setAvailablePermissions(availableData.data)
+      const availableRes = await fetchData('/permissions/available')
+      if (availableRes.success) {
+        setAvailablePermissions(availableRes.data)
       }
 
       // Fetch current user permissions
-      const userResponse = await fetch(`${API_BASE_URL}/permissions/${user.type}/${user.id}`, {
-        headers: {
-          'Authorization': `Bearer ${token || ''}`
-        }
-      })
-      const userData = await userResponse.json()
-
-      if (userData.success) {
-        setSelectedPermissions(userData.data.permissions || [])
+      const userRes = await fetchData(`/permissions/${user.type}/${user.id}`)
+      if (userRes.success) {
+        setSelectedPermissions(userRes.data.permissions || [])
       }
     } catch (err) {
       console.error('Error fetching permissions:', err)
@@ -73,24 +61,17 @@ function PermissionManager({ user, onClose, onUpdate }) {
     try {
       setSaving(true)
       setError(null)
-      const token = localStorage.getItem('adminToken')
 
-      const response = await fetch(`${API_BASE_URL}/permissions/${user.type}/${user.id}`, {
+      const result = await fetchData(`/permissions/${user.type}/${user.id}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token || ''}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({ permissions: selectedPermissions })
       })
 
-      const data = await response.json()
-
-      if (data.success) {
-        onUpdate && onUpdate(data.data)
+      if (result.success) {
+        onUpdate && onUpdate(result.data)
         onClose()
       } else {
-        setError(data.message || 'Failed to update permissions')
+        setError(result.error || 'Failed to update permissions')
       }
     } catch (err) {
       console.error('Error updating permissions:', err)

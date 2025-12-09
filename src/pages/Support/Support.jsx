@@ -25,32 +25,45 @@ function Support() {
 
   const fetchTickets = async () => {
     setLoading(true)
-    const result = await fetchData(`/admin/support/tickets?status=${statusFilter}&limit=50`)
+    const statusParam = statusFilter === 'all' ? '' : `&status=${statusFilter}`
+    const result = await fetchData(`/support/tickets?${statusParam}&limit=50`)
     if (result.success) {
-      setTickets(result.data.tickets || [])
+      setTickets(result.data || [])
     }
     setLoading(false)
   }
 
   const fetchStats = async () => {
-    const result = await fetchData('/admin/support/stats')
-    if (result.success) {
-      setStats(result.data)
+    const result = await fetchData('/support/stats')
+    if (result.success && result.data) {
+      setStats(result.data.overview || {
+        total: 0,
+        pending: 0,
+        inProgress: 0,
+        resolved: 0,
+        closed: 0,
+        open: 0
+      })
     }
   }
 
   const fetchTicketDetails = async (ticketId) => {
-    const result = await fetchData(`/admin/support/tickets/${ticketId}`)
+    const result = await fetchData(`/support/tickets/${ticketId}`)
     if (result.success) {
       setSelectedTicket(result.data)
       setShowModal(true)
     }
   }
 
-  const handleStatusUpdate = async (ticketId, newStatus) => {
-    const result = await fetchData(`/admin/support/tickets/${ticketId}`, {
+  const handleStatusUpdate = async (ticketId, newStatus, priority) => {
+    const updateData = { status: newStatus }
+    if (priority) {
+      updateData.priority = priority
+    }
+    
+    const result = await fetchData(`/support/tickets/${ticketId}`, {
       method: 'PUT',
-      body: JSON.stringify({ status: newStatus })
+      body: JSON.stringify(updateData)
     })
     
     if (result.success) {
@@ -67,8 +80,8 @@ function Support() {
     if (!replyMessage.trim() || !selectedTicket) return
 
     setSubmitting(true)
-    const result = await fetchData(`/admin/support/tickets/${selectedTicket.id}/reply`, {
-      method: 'POST',
+    const result = await fetchData(`/support/tickets/${selectedTicket.id}`, {
+      method: 'PUT',
       body: JSON.stringify({ message: replyMessage })
     })
     
@@ -224,20 +237,20 @@ function Support() {
               {tickets.map((ticket) => (
                 <tr key={ticket.id}>
                   <td className="query-id">{ticket.ticketNumber}</td>
-                  <td>{ticket.buyerName}</td>
-                  <td>{ticket.propertyName}</td>
+                  <td>{ticket.buyer?.name || 'N/A'}</td>
+                  <td>{ticket.property?.flatNo ? `${ticket.property.flatNo}${ticket.property.buildingName ? ` - ${ticket.property.buildingName}` : ''}` : 'N/A'}</td>
                   <td className="query-subject">{ticket.subject}</td>
-                  <td className="capitalize">{ticket.category}</td>
+                  <td className="capitalize">{ticket.category || 'N/A'}</td>
                   <td>
                     <span className={`priority-badge ${getPriorityClass(ticket.priority)}`}>
-                      {ticket.priority}
+                      {ticket.priority || 'medium'}
                     </span>
                   </td>
                   <td>
                     <select 
                       className={`status-select ${getStatusClass(ticket.status)}`}
                       value={ticket.status}
-                      onChange={(e) => handleStatusUpdate(ticket.id, e.target.value)}
+                      onChange={(e) => handleStatusUpdate(ticket.id, e.target.value, ticket.priority)}
                     >
                       <option value="pending">Pending</option>
                       <option value="in-progress">In Progress</option>
@@ -245,7 +258,7 @@ function Support() {
                       <option value="closed">Closed</option>
                     </select>
                   </td>
-                  <td>{formatDate(ticket.createdAt)}</td>
+                  <td>{ticket.createdAt ? formatDate(ticket.createdAt) : 'N/A'}</td>
                   <td>
                     <div className="table-actions">
                       <button 
@@ -285,30 +298,30 @@ function Support() {
                 <div className="info-row">
                   <div className="info-item">
                     <label>User:</label>
-                    <span>{selectedTicket.buyerName}</span>
+                    <span>{selectedTicket.buyer?.name || 'N/A'}</span>
                   </div>
                   <div className="info-item">
                     <label>Email:</label>
-                    <span>{selectedTicket.buyerEmail}</span>
+                    <span>{selectedTicket.buyer?.email || 'N/A'}</span>
                   </div>
                   <div className="info-item">
                     <label>Phone:</label>
-                    <span>{selectedTicket.buyerPhone}</span>
+                    <span>{selectedTicket.buyer?.phone || 'N/A'}</span>
                   </div>
                 </div>
                 <div className="info-row">
                   <div className="info-item">
                     <label>Property:</label>
-                    <span>{selectedTicket.propertyName}</span>
+                    <span>{selectedTicket.property?.flatNo ? `${selectedTicket.property.flatNo}${selectedTicket.property.buildingName ? ` - ${selectedTicket.property.buildingName}` : ''}` : 'N/A'}</span>
                   </div>
                   <div className="info-item">
                     <label>Category:</label>
-                    <span className="capitalize">{selectedTicket.category}</span>
+                    <span className="capitalize">{selectedTicket.category || 'N/A'}</span>
                   </div>
                   <div className="info-item">
                     <label>Priority:</label>
                     <span className={`priority-badge ${getPriorityClass(selectedTicket.priority)}`}>
-                      {selectedTicket.priority}
+                      {selectedTicket.priority || 'medium'}
                     </span>
                   </div>
                 </div>
@@ -318,6 +331,14 @@ function Support() {
                     <span>{selectedTicket.subject}</span>
                   </div>
                 </div>
+                {selectedTicket.description && (
+                  <div className="info-row">
+                    <div className="info-item full-width">
+                      <label>Description:</label>
+                      <span>{selectedTicket.description}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="conversation-container">
