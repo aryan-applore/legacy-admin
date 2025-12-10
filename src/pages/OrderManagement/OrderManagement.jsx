@@ -63,16 +63,20 @@ function OrderManagement() {
     const loadData = async () => {
       setLoading(true)
       try {
-        const [ordersRes, suppliersRes, productsRes] = await Promise.all([
+        const [ordersRes, usersRes, productsRes] = await Promise.all([
           fetchData('/supplier-orders'),
-          fetchData('/suppliers'),
+          fetchData('/users'),
           fetchData('/products')
         ])
         if (ordersRes.success) {
           setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
         }
-        if (suppliersRes.success) {
-          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
+        if (usersRes.success && usersRes.data) {
+          // Filter suppliers from unified users response
+          const suppliersData = usersRes.data.filter(user => 
+            user.type === 'supplier' || user.role === 'supplier'
+          )
+          setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
         }
         if (productsRes.success) {
           setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])

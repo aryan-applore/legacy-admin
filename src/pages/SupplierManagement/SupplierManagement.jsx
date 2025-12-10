@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useApiFetch, useNotification } from '../../lib/apiHelpers'
 import './SupplierManagement.css'
 import {
   flexRender,
@@ -31,30 +32,7 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
 
-// Reusable API fetch helper
-const useApiFetch = () => {
-  const fetchData = async (endpoint, options = {}) => {
-    try {
-      const token = localStorage.getItem('adminToken')
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-          ...options.headers,
-        },
-      })
-      const data = await response.json()
-      return { success: data.success, data: data.data || data, error: data.error, count: data.count, total: data.total }
-    } catch (error) {
-      return { success: false, error: error.message }
-    }
-  }
-  
-  return { fetchData }
-}
 
 function SupplierManagement() {
   const [showSupplierModal, setShowSupplierModal] = useState(false)
@@ -73,7 +51,7 @@ function SupplierManagement() {
   const [showOrdersListModal, setShowOrdersListModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [selectedOrder, setSelectedOrder] = useState(null)
-  const [notification, setNotification] = useState(null)
+  const [notification, showNotification] = useNotification()
   const { fetchData } = useApiFetch()
 
   // Form Validation States
@@ -190,22 +168,36 @@ function SupplierManagement() {
     }
   }, [availableBrokers])
 
-  // Load suppliers, products and orders from API
+  // Helper function to fetch suppliers from unified users endpoint
+  const fetchSuppliers = async () => {
+    const usersRes = await fetchData('/users')
+    if (usersRes.success && usersRes.data) {
+      // Filter suppliers from unified users response
+      const suppliersData = usersRes.data.filter(user => 
+        user.type === 'supplier' || user.role === 'supplier'
+      )
+      setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
+      return true
+    }
+    return false
+  }
+
+  // Load suppliers and orders from API
   useEffect(() => {
     const loadData = async () => {
       setLoadingSuppliers(true)
       setLoading(true)
       try {
-        const [suppliersRes, productsRes, ordersRes] = await Promise.all([
-          fetchData('/suppliers'),
-          fetchData('/products'),
+        const [usersRes, ordersRes] = await Promise.all([
+          fetchData('/users'),
           fetchData('/supplier-orders')
         ])
-        if (suppliersRes.success) {
-          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-        }
-        if (productsRes.success) {
-          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+        if (usersRes.success && usersRes.data) {
+          // Filter suppliers from unified users response
+          const suppliersData = usersRes.data.filter(user => 
+            user.type === 'supplier' || user.role === 'supplier'
+          )
+          setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
         }
         if (ordersRes.success) {
           setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
@@ -220,6 +212,19 @@ function SupplierManagement() {
     }
     loadData()
   }, [])
+
+  // Fetch products only when products modal is opened
+  const fetchProducts = async () => {
+    try {
+      const productsRes = await fetchData('/products')
+      if (productsRes.success) {
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error)
+      showNotification('Failed to load products', 'error')
+    }
+  }
 
   // Helper to normalize supplier data (API format to UI format)
   const normalizeSupplier = (supplier) => {
@@ -254,10 +259,7 @@ function SupplierManagement() {
   const [columnFilters, setColumnFilters] = useState([])
   const [columnVisibility, setColumnVisibility] = useState({})
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
-  }
+
 
   // Validation Functions
   const validateSupplierForm = (formData, isNewSupplier) => {
@@ -369,10 +371,7 @@ function SupplierManagement() {
     if (result.success) {
       showNotification(selectedSupplier ? 'Supplier updated successfully!' : 'Supplier created successfully!', 'success')
       // Reload suppliers from API
-      const suppliersRes = await fetchData('/suppliers')
-      if (suppliersRes.success) {
-        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-      }
+      await fetchSuppliers()
       setShowSupplierModal(false)
       setSelectedSupplier(null)
       setFormErrors({})
@@ -397,10 +396,7 @@ function SupplierManagement() {
       if (result.success) {
         showNotification('Supplier deleted successfully!', 'success')
         // Reload suppliers from API
-        const suppliersRes = await fetchData('/suppliers')
-        if (suppliersRes.success) {
-          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-        }
+        await fetchSuppliers()
       } else {
         showNotification(result.error || 'Failed to delete supplier', 'error')
       }
@@ -415,10 +411,7 @@ function SupplierManagement() {
       // In a real implementation, you'd add a verificationStatus field to the Supplier model
       showNotification(`${supplierName} has been approved!`, 'success')
       // Reload suppliers
-      const suppliersRes = await fetchData('/suppliers')
-      if (suppliersRes.success) {
-        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-      }
+      await fetchSuppliers()
     }
   }
 
@@ -429,10 +422,7 @@ function SupplierManagement() {
       // Note: API doesn't have verification status, so we'll just show notification
       showNotification(`${supplierName} has been rejected.`, 'success')
       // Reload suppliers
-      const suppliersRes = await fetchData('/suppliers')
-      if (suppliersRes.success) {
-        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-      }
+      await fetchSuppliers()
     }
   }
 
@@ -443,10 +433,7 @@ function SupplierManagement() {
       // Note: API doesn't have status field, so we'll just show notification
       showNotification(`${supplierName} activated!`, 'success')
       // Reload suppliers
-      const suppliersRes = await fetchData('/suppliers')
-      if (suppliersRes.success) {
-        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-      }
+      await fetchSuppliers()
     }
   }
 
@@ -457,10 +444,7 @@ function SupplierManagement() {
       // Note: API doesn't have status field, so we'll just show notification
       showNotification(`${supplierName} deactivated!`, 'success')
       // Reload suppliers
-      const suppliersRes = await fetchData('/suppliers')
-      if (suppliersRes.success) {
-        setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
-      }
+      await fetchSuppliers()
     }
   }
 
@@ -1082,8 +1066,11 @@ function SupplierManagement() {
           <p className="page-subtitle">Manage supplier accounts and information</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button className="btn btn-outline" onClick={() => setShowProductsListModal(true)}>
-            📦 Products ({products.length})
+          <button className="btn btn-outline" onClick={() => {
+            fetchProducts()
+            setShowProductsListModal(true)
+          }}>
+            📦 Products
           </button>
           <button className="btn btn-outline" onClick={() => setShowOrdersListModal(true)}>
             🛒 Orders ({orders.length})
@@ -2191,5 +2178,6 @@ function SupplierManagement() {
 }
 
 export default SupplierManagement
+
 
 

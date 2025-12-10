@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useApiFetch, useNotification } from '../../lib/apiHelpers'
 import './ProjectManagement.css'
 import {
   flexRender,
@@ -48,42 +49,7 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
 
-// DRY: Reusable notification helper
-const useNotification = () => {
-  const [notification, setNotification] = useState(null)
-  
-  const show = (message, type = 'success') => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 4000)
-  }
-  
-  return [notification, show]
-}
-
-// DRY: Reusable API fetch helper
-const useApiFetch = () => {
-  const fetchData = async (endpoint, options = {}) => {
-    try {
-      const token = localStorage.getItem('adminToken')
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-          ...options.headers,
-        },
-      })
-      const data = await response.json()
-      return { success: data.success, data: data.data || data, error: data.error }
-    } catch (error) {
-      return { success: false, error: error.message }
-    }
-  }
-  
-  return { fetchData }
-}
 
 // DRY: Reusable stats calculation
 const calculateStats = (projects, properties) => {
@@ -170,11 +136,10 @@ function ProjectManagement() {
         setLoading(true)
         setError(null)
         
-        const [projectsRes, propertiesRes, buyersRes, brokersRes] = await Promise.all([
+        const [projectsRes, propertiesRes, usersRes] = await Promise.all([
           fetchData('/projects'),
-          fetchData('/admin/properties'),
-          fetchData('/buyers'),
-          fetchData('/brokers'),
+          fetchData('/properties'),
+          fetchData('/users'),
         ])
         
         if (projectsRes.success) {
@@ -197,21 +162,22 @@ function ProjectManagement() {
           setProperties([])
         }
         
-        if (buyersRes.success) {
-          const buyersData = buyersRes.data || []
+        if (usersRes.success) {
+          const allUsers = usersRes.data || []
+          // Filter buyers and brokers from unified users response
+          const buyersData = allUsers.filter(user => 
+            user.type === 'buyer' || user.role === 'buyer'
+          )
+          const brokersData = allUsers.filter(user => 
+            user.type === 'broker' || user.role === 'broker'
+          )
           setAvailableBuyers(Array.isArray(buyersData) ? buyersData : [])
-          console.log('Buyers loaded:', buyersData.length)
-        } else {
-          console.error('Failed to load buyers:', buyersRes.error)
-          setAvailableBuyers([])
-        }
-        
-        if (brokersRes.success) {
-          const brokersData = brokersRes.data || []
           setAvailableBrokers(Array.isArray(brokersData) ? brokersData : [])
+          console.log('Buyers loaded:', buyersData.length)
           console.log('Brokers loaded:', brokersData.length)
         } else {
-          console.error('Failed to load brokers:', brokersRes.error)
+          console.error('Failed to load users:', usersRes.error)
+          setAvailableBuyers([])
           setAvailableBrokers([])
         }
       } catch (err) {
@@ -261,7 +227,7 @@ function ProjectManagement() {
       // Reload data
       const [projectsRes, propertiesRes] = await Promise.all([
         fetchData('/projects'),
-        fetchData('/admin/properties'),
+        fetchData('/properties'),
       ])
       if (projectsRes.success) setProjects(projectsRes.data || [])
       if (propertiesRes.success) setProperties(propertiesRes.data || [])
@@ -480,37 +446,39 @@ function ProjectManagement() {
       cell: ({ row }) => {
         const project = row.original
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => actions.view(project)}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => actions.edit(project)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Project
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => actions.assign(project)}>
-                <Users className="mr-2 h-4 w-4" />
-                Manage Assignments
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                onClick={() => actions.delete(project.id)}
-                className="text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0">
+                  <span className="sr-only">Open menu</span>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => actions.view(project)}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => actions.edit(project)}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit Project
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => actions.assign(project)}>
+                  <Users className="mr-2 h-4 w-4" />
+                  Manage Assignments
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => actions.delete(project.id)}
+                  className="text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )
       },
     },
@@ -706,7 +674,18 @@ function ProjectManagement() {
             <TableBody>
               {table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                  <TableRow 
+                    key={row.id} 
+                    data-state={row.getIsSelected() && "selected"}
+                    onClick={(e) => {
+                      // Don't open dialog if clicking on actions dropdown or its trigger
+                      if (e.target.closest('[role="menuitem"]') || e.target.closest('button')) {
+                        return
+                      }
+                      actions.view(row.original)
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

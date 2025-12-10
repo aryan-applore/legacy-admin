@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useApiFetch, useNotification } from '../../lib/apiHelpers'
 import './BrokerManagement.css'
 import {
   User,
@@ -37,8 +38,7 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
-// API Base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
+
 
 function BrokerManagement() {
   const [showBrokerModal, setShowBrokerModal] = useState(false)
@@ -56,7 +56,9 @@ function BrokerManagement() {
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('Sort By')
-  const [notification, setNotification] = useState(null)
+
+  const [notification, showNotification] = useNotification()
+  const { fetchData } = useApiFetch()
 
   // Brokers State - Load from API
   const [brokers, setBrokers] = useState([])
@@ -146,26 +148,17 @@ function BrokerManagement() {
     }
   }, [availableBuyers, availableSuppliers])
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type })
-    setTimeout(() => setNotification(null), 3000)
-  }
+
 
   // Fetch broker clients from API
   const fetchBrokerClients = async (brokerId) => {
     if (!brokerId || loadingClients[brokerId]) return
     
     try {
+
       setLoadingClients(prev => ({ ...prev, [brokerId]: true }))
-      const token = localStorage.getItem('adminToken')
       
-      const response = await fetch(`${API_BASE_URL}/brokers/${brokerId}/clients`, {
-        headers: {
-          'Authorization': `Bearer ${token || ''}`
-        }
-      })
-      
-      const data = await response.json()
+      const data = await fetchData(`/brokers/${brokerId}/clients`)
       
       if (data.success && data.data) {
         setBrokerClients(prev => ({
@@ -205,8 +198,8 @@ function BrokerManagement() {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch(`${API_BASE_URL}/brokers`)
-        const data = await response.json()
+
+        const data = await fetchData('/brokers')
         
         if (data.success && data.data) {
           // Map backend broker data to frontend format
@@ -216,13 +209,7 @@ function BrokerManagement() {
             // Fetch clients count for each broker
             let clientsCount = 0
             try {
-              const token = localStorage.getItem('adminToken')
-              const clientsResponse = await fetch(`${API_BASE_URL}/brokers/${brokerId}/clients`, {
-                headers: {
-                  'Authorization': `Bearer ${token || ''}`
-                }
-              })
-              const clientsData = await clientsResponse.json()
+              const clientsData = await fetchData(`/brokers/${brokerId}/clients`)
               if (clientsData.success) {
                 clientsCount = clientsData.count || 0
               }
@@ -372,38 +359,29 @@ function BrokerManagement() {
     const fullBrokerData = { ...brokerData, ...additionalFields }
 
     try {
-      let response
+      let data
       if (selectedBroker) {
         // Update existing broker
-        response = await fetch(`${API_BASE_URL}/brokers/${selectedBroker.id}`, {
+        data = await fetchData(`/brokers/${selectedBroker.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(fullBrokerData)
         })
       } else {
         // Create new broker
-        response = await fetch(`${API_BASE_URL}/brokers`, {
+        data = await fetchData('/brokers', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(fullBrokerData)
         })
       }
-
-      const data = await response.json()
       
       if (data.success) {
         showNotification(selectedBroker ? 'Broker updated successfully!' : 'Broker created successfully!', 'success')
         handleCloseModal()
         
         // Refresh brokers list
-        const fetchResponse = await fetch(`${API_BASE_URL}/brokers`)
-        const fetchData = await fetchResponse.json()
-        if (fetchData.success && fetchData.data) {
-          const mappedBrokers = fetchData.data.map(broker => ({
+        const fetchDataResponse = await fetchData('/brokers')
+        if (fetchDataResponse.success && fetchDataResponse.data) {
+          const mappedBrokers = fetchDataResponse.data.map(broker => ({
             id: broker._id || broker.id,
             name: broker.name || 'N/A',
             email: broker.email || 'N/A',
@@ -435,10 +413,9 @@ function BrokerManagement() {
   const handleDeleteBroker = async (brokerId) => {
     if (window.confirm('Are you sure you want to delete this broker?')) {
       try {
-        const response = await fetch(`${API_BASE_URL}/brokers/${brokerId}`, {
+        const data = await fetchData(`/brokers/${brokerId}`, {
           method: 'DELETE'
         })
-        const data = await response.json()
         
         if (data.success) {
           setBrokers(brokers.filter(b => b.id !== brokerId))
@@ -488,14 +465,10 @@ function BrokerManagement() {
     
     if (window.confirm(`Are you sure you want to ${action} ${broker.name}'s account?`)) {
       try {
-        const response = await fetch(`${API_BASE_URL}/brokers/${brokerId}`, {
+        const data = await fetchData(`/brokers/${brokerId}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ status: newStatus })
         })
-        const data = await response.json()
         
         if (data.success) {
           setBrokers(brokers.map(b => 

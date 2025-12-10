@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
-import './UserManagement.css'
+import { useApiFetch } from '../../lib/apiHelpers'
+import './BuyerManagement.css'
 import { 
   Users, 
   CheckCircle, 
@@ -59,7 +60,7 @@ import { DataTablePagination } from "@/components/data-table/data-table-paginati
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 
 // API Base URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7000/api'
+
 
 // Property Assignment Form Component
 function PropertyAssignmentForm({ projects, properties, brokers, onAdd }) {
@@ -176,7 +177,7 @@ function PropertyAssignmentForm({ projects, properties, brokers, onAdd }) {
   )
 }
 
-function UserManagement() {
+function BuyerManagement() {
   const [showUserModal, setShowUserModal] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
@@ -196,6 +197,7 @@ function UserManagement() {
   const [filterStatus, setFilterStatus] = useState('All Status')
   const [filterPayment, setFilterPayment] = useState('Payment Status')
   const [notification, setNotification] = useState(null)
+  const { fetchData } = useApiFetch()
 
   // Users State
   const [users, setUsers] = useState([])
@@ -222,8 +224,7 @@ function UserManagement() {
     const fetchProjectsAndBrokers = async () => {
       try {
         // Fetch projects
-        const projectsResponse = await fetch(`${API_BASE_URL}/projects`)
-        const projectsData = await projectsResponse.json()
+        const projectsData = await fetchData('/projects')
         if (projectsData.success) {
           setProjects(projectsData.data || [])
           console.log('Projects loaded:', projectsData.data?.length || 0)
@@ -231,23 +232,20 @@ function UserManagement() {
           console.error('Failed to load projects:', projectsData.error)
         }
 
-        // Fetch brokers
-        const brokersResponse = await fetch(`${API_BASE_URL}/brokers`)
-        const brokersData = await brokersResponse.json()
-        if (brokersData.success) {
-          setBrokers(brokersData.data || [])
-          console.log('Brokers loaded:', brokersData.data?.length || 0)
+        // Fetch brokers from unified users endpoint
+        const usersData = await fetchData('/users')
+        if (usersData.success && usersData.data) {
+          const brokersData = usersData.data.filter(user => 
+            user.type === 'broker' || user.role === 'broker'
+          )
+          setBrokers(brokersData || [])
+          console.log('Brokers loaded:', brokersData.length || 0)
         } else {
-          console.error('Failed to load brokers:', brokersData.error)
+          console.error('Failed to load brokers:', usersData.error)
         }
 
         // Fetch properties
-        const propertiesResponse = await fetch(`${API_BASE_URL}/admin/properties`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('adminToken') || ''}`
-          }
-        })
-        const propertiesData = await propertiesResponse.json()
+        const propertiesData = await fetchData('/properties')
         if (propertiesData.success && propertiesData.data) {
           setProperties(propertiesData.data.properties || [])
           console.log('Properties loaded:', propertiesData.data.properties?.length || 0)
@@ -271,8 +269,7 @@ function UserManagement() {
         setLoading(true)
         setError(null)
         // Fetch users with properties included
-        const response = await fetch(`${API_BASE_URL}/buyers?includeProperties=true`)
-        const data = await response.json()
+        const data = await fetchData('/buyers?includeProperties=true')
         
         if (data.success && data.data) {
           // Map backend user data to frontend format
@@ -314,7 +311,7 @@ function UserManagement() {
               name: user.name || 'N/A',
               email: user.email || 'N/A',
               phone: user.phone || 'N/A',
-              status: 'Active', // Default status, can be updated later
+              status: user.isActive !== false ? 'Active' : 'Inactive',
               project: projectsDisplay,
               property: propertiesDisplay,
               propertyId: userProperties.length > 0 ? userProperties[0]?.id || null : null,
@@ -520,15 +517,12 @@ function UserManagement() {
       }
 
       let userId
-      let response
+      let data
       if (selectedUser) {
         // Update existing user
         userId = selectedUser.id
-        response = await fetch(`${API_BASE_URL}/buyers/${selectedUser.id}`, {
+        data = await fetchData(`/buyers/${selectedUser.id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(userData)
         })
       } else {
@@ -537,16 +531,11 @@ function UserManagement() {
           showNotification('Password is required for new users', 'error')
           return
         }
-        response = await fetch(`${API_BASE_URL}/buyers`, {
+        data = await fetchData('/buyers', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(userData)
         })
       }
-
-      const data = await response.json()
       
       if (data.success) {
         userId = userId || data.data._id || data.data.id
@@ -561,25 +550,15 @@ function UserManagement() {
               showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: Authentication required. Please log in as admin.`, 'error')
             } else {
               // Use the new assign-properties endpoint for multiple assignments
-              const assignResponse = await fetch(`${API_BASE_URL}/buyers/${userId}/assign-properties`, {
+              const assignData = await fetchData(`/buyers/${userId}/assign-properties`, {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${adminToken}`
-                },
                 body: JSON.stringify({
                   propertyAssignments: propertyAssignments
                 })
               })
-
-              const assignData = await assignResponse.json()
               if (!assignData.success) {
                 console.error('Failed to assign properties:', assignData.error)
-                if (assignResponse.status === 401 || assignResponse.status === 403) {
-                  showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: Authentication error. Please log in as admin.`, 'error')
-                } else {
-                  showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: ${assignData.error}`, 'error')
-                }
+                showNotification(`${selectedUser ? 'User updated' : 'User created'} but property assignment failed: ${assignData.error}`, 'error')
               } else {
                 const successCount = assignData.data?.totalAssigned || 0
                 const errorCount = assignData.data?.errors?.length || 0
@@ -599,11 +578,10 @@ function UserManagement() {
         }
         
         // Refresh users list
-        const fetchResponse = await fetch(`${API_BASE_URL}/buyers?includeProperties=true`)
-        const fetchData = await fetchResponse.json()
+        const fetchDataResponse = await fetchData('/buyers?includeProperties=true')
         
-        if (fetchData.success && fetchData.data) {
-          const mappedUsers = fetchData.data.map(user => {
+        if (fetchDataResponse.success && fetchDataResponse.data) {
+          const mappedUsers = fetchDataResponse.data.map(user => {
             // Get all properties if available
             const userProperties = user.properties && user.properties.length > 0 ? user.properties : []
             
@@ -679,11 +657,9 @@ function UserManagement() {
   const handleDeleteUser = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
       try {
-        const response = await fetch(`${API_BASE_URL}/buyers/${userId}`, {
+        const data = await fetchData(`/buyers/${userId}`, {
           method: 'DELETE'
         })
-        
-        const data = await response.json()
         
         if (data.success) {
           // Remove user from local state
@@ -765,16 +741,10 @@ function UserManagement() {
         return
       }
       // For admin users, fetch documents for the selected buyer
-      const url = `${API_BASE_URL}/documents${user.id ? `?buyerId=${user.id}` : ''}`
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      })
+      const url = `/documents${user.id ? `?buyerId=${user.id}` : ''}`
+      const data = await fetchData(url)
       
-      if (response.ok) {
-        const data = await response.json()
+      if (data.success) {
         if (data.success && data.data && data.data.documents) {
           // The API filters documents by buyerId query parameter (for admin) or authenticated buyer
           // Map documents to ensure correct format
@@ -1319,6 +1289,20 @@ This is a sample document for demonstration purposes.`
       },
     },
     {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        return (
+          <span className={`status-badge ${status === 'Active' ? 'status-success' : 'status-error'}`}>
+            {status}
+          </span>
+        )
+      },
+    },
+    {
       id: "actions",
       enableHiding: false,
       cell: ({ row }) => {
@@ -1382,7 +1366,7 @@ This is a sample document for demonstration purposes.`
     <div className="user-management-page">
       <div className="page-header">
         <div>
-          <h1 className="page-title-main">User Management (Buyers)</h1>
+          <h1 className="page-title-main">Buyer Management</h1>
           <p className="page-subtitle">Manage all buyer accounts and their details</p>
         </div>
         <button className="btn btn-primary" onClick={() => { 
@@ -2332,5 +2316,5 @@ This is a sample document for demonstration purposes.`
   )
 }
 
-export default UserManagement
+export default BuyerManagement
 

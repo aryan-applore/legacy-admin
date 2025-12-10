@@ -17,7 +17,15 @@ export const useApiFetch = () => {
         },
       })
       const data = await response.json()
-      return { success: data.success, data: data.data || data, error: data.error, count: data.count, total: data.total }
+      return { 
+        success: data.success, 
+        data: data.data || data, 
+        error: data.error, 
+        count: data.count, 
+        total: data.total,
+        status: response.status,
+        statusText: response.statusText
+      }
     } catch (error) {
       return { success: false, error: error.message }
     }
