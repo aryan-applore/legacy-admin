@@ -311,7 +311,7 @@ function BuyerManagement() {
               name: user.name || 'N/A',
               email: user.email || 'N/A',
               phone: user.phone || 'N/A',
-              status: 'Active', // Default status, can be updated later
+              status: user.isActive !== false ? 'Active' : 'Inactive',
               project: projectsDisplay,
               property: propertiesDisplay,
               propertyId: userProperties.length > 0 ? userProperties[0]?.id || null : null,
@@ -1233,6 +1233,20 @@ This is a sample document for demonstration purposes.`
               <span className="no-broker">No Broker</span>
             )}
           </div>
+        )
+      },
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => {
+        const status = row.original.status
+        return (
+          <span className={`status-badge ${status === 'Active' ? 'status-success' : 'status-error'}`}>
+            {status}
+          </span>
         )
       },
     },

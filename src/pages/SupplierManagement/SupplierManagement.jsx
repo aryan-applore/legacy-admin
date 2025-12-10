@@ -182,15 +182,14 @@ function SupplierManagement() {
     return false
   }
 
-  // Load suppliers, products and orders from API
+  // Load suppliers and orders from API
   useEffect(() => {
     const loadData = async () => {
       setLoadingSuppliers(true)
       setLoading(true)
       try {
-        const [usersRes, productsRes, ordersRes] = await Promise.all([
+        const [usersRes, ordersRes] = await Promise.all([
           fetchData('/users'),
-          fetchData('/products'),
           fetchData('/supplier-orders')
         ])
         if (usersRes.success && usersRes.data) {
@@ -199,9 +198,6 @@ function SupplierManagement() {
             user.type === 'supplier' || user.role === 'supplier'
           )
           setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
-        }
-        if (productsRes.success) {
-          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
         }
         if (ordersRes.success) {
           setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
@@ -216,6 +212,19 @@ function SupplierManagement() {
     }
     loadData()
   }, [])
+
+  // Fetch products only when products modal is opened
+  const fetchProducts = async () => {
+    try {
+      const productsRes = await fetchData('/products')
+      if (productsRes.success) {
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error)
+      showNotification('Failed to load products', 'error')
+    }
+  }
 
   // Helper to normalize supplier data (API format to UI format)
   const normalizeSupplier = (supplier) => {
@@ -1057,8 +1066,11 @@ function SupplierManagement() {
           <p className="page-subtitle">Manage supplier accounts and information</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button className="btn btn-outline" onClick={() => setShowProductsListModal(true)}>
-            📦 Products ({products.length})
+          <button className="btn btn-outline" onClick={() => {
+            fetchProducts()
+            setShowProductsListModal(true)
+          }}>
+            📦 Products
           </button>
           <button className="btn btn-outline" onClick={() => setShowOrdersListModal(true)}>
             🛒 Orders ({orders.length})
