@@ -45,7 +45,7 @@ function AppRoutes() {
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
         <Route path="/" element={user ? <Layout /> : <Navigate to="/login" replace />}>
           <Route index element={
-            <ProtectedRoute requiredPermission={{ resource: 'dashboard', action: 'read' }}>
+            <ProtectedRoute>
               <Dashboard />
             </ProtectedRoute>
           } />

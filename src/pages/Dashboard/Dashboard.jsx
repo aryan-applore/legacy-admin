@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useApiFetch, useNotification } from '../../lib/apiHelpers'
+import { useAuth } from '../../contexts/AuthContext'
 import './Dashboard.css'
 
 function Dashboard() {
   const { fetchData } = useApiFetch()
+  const { hasAnyPermission, isSuperAdmin } = useAuth()
   const [notification, showNotification] = useNotification()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
@@ -48,36 +50,38 @@ function Dashboard() {
     return `₹${amount.toLocaleString('en-IN')}`
   }
 
+  const canAccess = (resource) => isSuperAdmin() || hasAnyPermission(resource)
+
   const dashboardStats = [
-    {
+    canAccess('properties') && {
       title: 'Total Properties',
       value: stats.properties?.total?.toLocaleString() || '0',
       icon: '🏢',
       color: 'blue',
       change: `Total properties`
     },
-    {
+    canAccess('users') && {
       title: 'Active Users',
       value: stats.users?.buyers?.active?.toLocaleString() || '0',
       icon: '👥',
       color: 'teal',
       change: `${stats.users?.total || 0} total users`
     },
-    {
+    canAccess('orders') && {
       title: 'Total Revenue',
       value: formatCurrency(stats.revenue?.received || 0),
       icon: '💰',
       color: 'green',
       change: `${formatCurrency(stats.revenue?.pending || 0)} pending`
     },
-    {
+    canAccess('orders') && {
       title: 'Pending Payments',
       value: formatCurrency(stats.revenue?.pending || 0),
       icon: '⏳',
       color: 'orange',
       change: `${stats.orders?.byPaymentStatus?.pending?.count || 0} orders`
     }
-  ]
+  ].filter(Boolean)
 
   return (
     <div className="dashboard">
@@ -87,95 +91,124 @@ function Dashboard() {
         <div style={{ textAlign: 'center', padding: '40px' }}>Loading dashboard...</div>
       ) : (
         <>
-          <div className="stats-grid">
-            {dashboardStats.map((stat, index) => (
-              <div key={index} className={`stat-card stat-${stat.color}`}>
-                <div className="stat-icon">{stat.icon}</div>
-                <div className="stat-content">
-                  <h3 className="stat-value">{stat.value}</h3>
-                  <p className="stat-title">{stat.title}</p>
-                  <span className="stat-change">{stat.change}</span>
+          {dashboardStats.length > 0 ? (
+            <div className="stats-grid">
+              {dashboardStats.map((stat, index) => (
+                <div key={index} className={`stat-card stat-${stat.color}`}>
+                  <div className="stat-icon">{stat.icon}</div>
+                  <div className="stat-content">
+                    <h3 className="stat-value">{stat.value}</h3>
+                    <p className="stat-title">{stat.title}</p>
+                    <span className="stat-change">{stat.change}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="card" style={{ textAlign: 'center', padding: '24px' }}>
+              <p>No summary stats available for your permissions.</p>
+            </div>
+          )}
 
           <div className="dashboard-grid">
-            <div className="card recent-activities">
-              <h2>Overview Statistics</h2>
-              <div className="activities-list">
-                <div className="activity-item">
-                  <div className="activity-avatar">👥</div>
-                  <div className="activity-details">
-                    <p className="activity-user">Users</p>
-                    <p className="activity-action">
-                      Total: {stats.users?.total || 0} | 
-                      Buyers: {stats.users?.buyers?.total || 0} | 
-                      Brokers: {stats.users?.brokers || 0} | 
-                      Suppliers: {stats.users?.suppliers || 0}
-                    </p>
-                  </div>
-                </div>
-                <div className="activity-item">
-                  <div className="activity-avatar">📦</div>
-                  <div className="activity-details">
-                    <p className="activity-user">Products</p>
-                    <p className="activity-action">
-                      Total: {stats.products?.total || 0} | 
-                      Low Stock: {stats.products?.lowStock || 0}
-                    </p>
-                  </div>
-                </div>
-                <div className="activity-item">
-                  <div className="activity-avatar">🛒</div>
-                  <div className="activity-details">
-                    <p className="activity-user">Orders</p>
-                    <p className="activity-action">
-                      Total: {stats.orders?.total || 0} | 
-                      Pending: {stats.orders?.byPaymentStatus?.pending?.count || 0}
-                    </p>
-                  </div>
-                </div>
-                <div className="activity-item">
-                  <div className="activity-avatar">🎫</div>
-                  <div className="activity-details">
-                    <p className="activity-user">Support Tickets</p>
-                    <p className="activity-action">
-                      Total: {stats.support?.totalTickets || 0} | 
-                      Pending: {stats.support?.byStatus?.pending || 0}
-                    </p>
-                  </div>
+            {canAccess('users') || canAccess('products') || canAccess('orders') || canAccess('support') ? (
+              <div className="card recent-activities">
+                <h2>Overview Statistics</h2>
+                <div className="activities-list">
+                  {canAccess('users') && (
+                    <div className="activity-item">
+                      <div className="activity-avatar">👥</div>
+                      <div className="activity-details">
+                        <p className="activity-user">Users</p>
+                        <p className="activity-action">
+                          Total: {stats.users?.total || 0} | 
+                          Buyers: {stats.users?.buyers?.total || 0} | 
+                          Brokers: {stats.users?.brokers || 0} | 
+                          Suppliers: {stats.users?.suppliers || 0}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {canAccess('products') && (
+                    <div className="activity-item">
+                      <div className="activity-avatar">📦</div>
+                      <div className="activity-details">
+                        <p className="activity-user">Products</p>
+                        <p className="activity-action">
+                          Total: {stats.products?.total || 0} | 
+                          Low Stock: {stats.products?.lowStock || 0}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {canAccess('orders') && (
+                    <div className="activity-item">
+                      <div className="activity-avatar">🛒</div>
+                      <div className="activity-details">
+                        <p className="activity-user">Orders</p>
+                        <p className="activity-action">
+                          Total: {stats.orders?.total || 0} | 
+                          Pending: {stats.orders?.byPaymentStatus?.pending?.count || 0}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {canAccess('support') && (
+                    <div className="activity-item">
+                      <div className="activity-avatar">🎫</div>
+                      <div className="activity-details">
+                        <p className="activity-user">Support Tickets</p>
+                        <p className="activity-action">
+                          Total: {stats.support?.totalTickets || 0} | 
+                          Pending: {stats.support?.byStatus?.pending || 0}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {!(canAccess('users') || canAccess('products') || canAccess('orders') || canAccess('support')) && (
+                    <p style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No overview data for your permissions.</p>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="card construction-status">
-              <h2>Projects & Properties</h2>
-              <div className="progress-item">
-                <div className="progress-header">
-                  <span>Total Projects</span>
-                  <span className="progress-percent">{stats.projects?.total || 0}</span>
-                </div>
+            {canAccess('projects') || canAccess('properties') || canAccess('documents') || canAccess('notifications') ? (
+              <div className="card construction-status">
+                <h2>Projects & Properties</h2>
+                {canAccess('projects') && (
+                  <div className="progress-item">
+                    <div className="progress-header">
+                      <span>Total Projects</span>
+                      <span className="progress-percent">{stats.projects?.total || 0}</span>
+                    </div>
+                  </div>
+                )}
+                {canAccess('properties') && (
+                  <div className="progress-item">
+                    <div className="progress-header">
+                      <span>Total Properties</span>
+                      <span className="progress-percent">{stats.properties?.total || 0}</span>
+                    </div>
+                  </div>
+                )}
+                {canAccess('documents') && (
+                  <div className="progress-item">
+                    <div className="progress-header">
+                      <span>Documents</span>
+                      <span className="progress-percent">{stats.documents?.total || 0}</span>
+                    </div>
+                  </div>
+                )}
+                {canAccess('notifications') && (
+                  <div className="progress-item">
+                    <div className="progress-header">
+                      <span>Notifications</span>
+                      <span className="progress-percent">{stats.notifications?.total || 0}</span>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="progress-item">
-                <div className="progress-header">
-                  <span>Total Properties</span>
-                  <span className="progress-percent">{stats.properties?.total || 0}</span>
-                </div>
-              </div>
-              <div className="progress-item">
-                <div className="progress-header">
-                  <span>Documents</span>
-                  <span className="progress-percent">{stats.documents?.total || 0}</span>
-                </div>
-              </div>
-              <div className="progress-item">
-                <div className="progress-header">
-                  <span>Notifications</span>
-                  <span className="progress-percent">{stats.notifications?.total || 0}</span>
-                </div>
-              </div>
-            </div>
+            ) : null}
           </div>
         </>
       )}
