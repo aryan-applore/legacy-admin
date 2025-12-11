@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/Layout/Layout'
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute'
 import Login from './pages/Login/Login'
@@ -17,59 +17,14 @@ import ProjectManagement from './pages/ProjectManagement/ProjectManagement'
 import NotificationManagement from './pages/NotificationManagement/NotificationManagement'
 import MarketingManagement from './pages/MarketingManagement/MarketingManagement'
 import AdminProfile from './pages/AdminProfile/AdminProfile'
+import AdminManagement from './pages/AdminManagement/AdminManagement'
 
-function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-
-  // Check authentication on mount
-  useEffect(() => {
-    const checkAuth = () => {
-      const token = localStorage.getItem('adminToken')
-      const adminUser = localStorage.getItem('adminUser')
-      
-      if (token && adminUser) {
-        try {
-          const user = JSON.parse(adminUser)
-          // Verify user has allowed role
-          const allowedRoles = ['admin', 'buyer', 'broker', 'supplier']
-          if (allowedRoles.includes(user.role)) {
-            setIsAuthenticated(true)
-          } else {
-            // Clear invalid auth
-            localStorage.removeItem('adminToken')
-            localStorage.removeItem('adminUser')
-            setIsAuthenticated(false)
-          }
-        } catch (err) {
-          console.error('Error parsing admin user:', err)
-          localStorage.removeItem('adminToken')
-          localStorage.removeItem('adminUser')
-          setIsAuthenticated(false)
-        }
-      } else {
-        setIsAuthenticated(false)
-      }
-      setIsLoading(false)
-    }
-
-    checkAuth()
-  }, [])
-
-  const handleLogin = (token, user) => {
-    localStorage.setItem('adminToken', token)
-    localStorage.setItem('adminUser', JSON.stringify(user))
-    setIsAuthenticated(true)
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem('adminToken')
-    localStorage.removeItem('adminUser')
-    setIsAuthenticated(false)
-  }
+// Inner app component that uses auth context
+function AppRoutes() {
+  const { user, loading } = useAuth()
 
   // Show loading state while checking authentication
-  if (isLoading) {
+  if (loading) {
     return (
       <div style={{ 
         display: 'flex', 
@@ -83,94 +38,104 @@ function App() {
     )
   }
 
-  // Show login page if not authenticated
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />
-  }
-
   // Show protected routes if authenticated
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
-        <Route path="/" element={<Layout onLogout={handleLogout} />}>
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
+        <Route path="/" element={user ? <Layout /> : <Navigate to="/login" replace />}>
           <Route index element={
-            <ProtectedRoute requiredPermission="dashboard">
+            <ProtectedRoute requiredPermission={{ resource: 'dashboard', action: 'read' }}>
               <Dashboard />
             </ProtectedRoute>
           } />
           <Route path="users">
             <Route index element={
-              <ProtectedRoute requiredPermission="users">
+              <ProtectedRoute requiredPermission={{ resource: 'users', action: 'read' }}>
                 <AllUsers />
               </ProtectedRoute>
             } />
             <Route path="buyers" element={
-              <ProtectedRoute requiredPermission="buyers">
+              <ProtectedRoute requiredPermission={{ resource: 'buyers', action: 'read' }}>
                 <BuyerManagement />
               </ProtectedRoute>
             } />
             <Route path="brokers" element={
-              <ProtectedRoute requiredPermission="brokers">
+              <ProtectedRoute requiredPermission={{ resource: 'brokers', action: 'read' }}>
                 <BrokerManagement />
               </ProtectedRoute>
             } />
             <Route path="suppliers" element={
-              <ProtectedRoute requiredPermission="suppliers">
+              <ProtectedRoute requiredPermission={{ resource: 'suppliers', action: 'read' }}>
                 <SupplierManagement />
               </ProtectedRoute>
             } />
           </Route>
           <Route path="projects">
             <Route index element={
-              <ProtectedRoute requiredPermission="project-management">
+              <ProtectedRoute requiredPermission={{ resource: 'projects', action: 'read' }}>
                 <ProjectManagement />
               </ProtectedRoute>
             } />
             <Route path="properties" element={
-              <ProtectedRoute requiredPermission="property-management">
+              <ProtectedRoute requiredPermission={{ resource: 'properties', action: 'read' }}>
                 <PropertyManagement />
               </ProtectedRoute>
             } />
             <Route path="marketing" element={
-              <ProtectedRoute requiredPermission="marketing">
+              <ProtectedRoute requiredPermission={{ resource: 'marketing', action: 'read' }}>
                 <MarketingManagement />
               </ProtectedRoute>
             } />
             <Route path="documents" element={
-              <ProtectedRoute requiredPermission="documents">
+              <ProtectedRoute requiredPermission={{ resource: 'documents', action: 'read' }}>
                 <Documents />
               </ProtectedRoute>
             } />
           </Route>
           <Route path="product" element={
-            <ProtectedRoute requiredPermission="product-management">
+            <ProtectedRoute requiredPermission={{ resource: 'products', action: 'read' }}>
               <ProductManagement />
             </ProtectedRoute>
           } />
           <Route path="order" element={
-            <ProtectedRoute requiredPermission="order-management">
+            <ProtectedRoute requiredPermission={{ resource: 'supplier-orders', action: 'read' }}>
               <OrderManagement />
             </ProtectedRoute>
           } />
           <Route path="support" element={
-            <ProtectedRoute requiredPermission="support">
+            <ProtectedRoute requiredPermission={{ resource: 'support', action: 'read' }}>
               <Support />
             </ProtectedRoute>
           } />
           <Route path="notifications" element={
-            <ProtectedRoute requiredPermission="notifications">
+            <ProtectedRoute requiredPermission={{ resource: 'notifications', action: 'read' }}>
               <NotificationManagement />
             </ProtectedRoute>
           } />
+          <Route path="admins" element={
+            <ProtectedRoute superadminOnly={true}>
+              <AdminManagement />
+            </ProtectedRoute>
+          } />
           <Route path="profile" element={
-            <ProtectedRoute requiredPermission="profile">
+            <ProtectedRoute>
               <AdminProfile />
             </ProtectedRoute>
           } />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
       </Routes>
     </Router>
+  )
+}
+
+// Main App component with AuthProvider
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   )
 }
 

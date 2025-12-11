@@ -84,46 +84,28 @@ const calculateStats = (projects, properties) => {
   }
 }
 
-// DRY: Get buyers for a project (aggregated from properties)
-const getProjectBuyers = (projectId, properties) => {
-  const projectProperties = properties.filter(p => {
+// DRY: Get properties for a project (supports properties array and project embed)
+const getProjectProperties = (projectId, properties, projects) => {
+  // First, try to get full property objects from properties array
+  const fromProperties = properties.filter(p => {
     const propProjectId = p.projectId?.id || p.projectId?._id || p.projectId
     return propProjectId === projectId
   })
-  
-  const buyerMap = new Map()
-  projectProperties.forEach(prop => {
-    const buyers = prop.buyers || (prop.buyer ? [prop.buyer] : [])
-    buyers.forEach(buyer => {
-      const id = buyer.id || buyer._id
-      if (id && !buyerMap.has(id)) {
-        buyerMap.set(id, buyer)
-      }
-    })
-  })
-  
-  return Array.from(buyerMap.values())
-}
 
-// DRY: Get brokers for a project (aggregated from properties)
-const getProjectBrokers = (projectId, properties) => {
-  const projectProperties = properties.filter(p => {
-    const propProjectId = p.projectId?.id || p.projectId?._id || p.projectId
-    return propProjectId === projectId
-  })
+  if (fromProperties.length > 0) return fromProperties
+
+  // Fallback to properties embedded in project response
+  const project = projects.find(p => (p.id || p._id) === projectId)
+  const embeddedProperties = Array.isArray(project?.properties) ? project.properties : []
   
-  const brokerMap = new Map()
-  projectProperties.forEach(prop => {
-    const brokers = prop.brokers || (prop.broker ? [prop.broker] : [])
-    brokers.forEach(broker => {
-      const id = broker.id || broker._id
-      if (id && !brokerMap.has(id)) {
-        brokerMap.set(id, broker)
-      }
-    })
+  // Enrich embedded properties with full property data if available
+  return embeddedProperties.map(embeddedProp => {
+    const fullProperty = properties.find(p => 
+      (p.id || p._id) === (embeddedProp.id || embeddedProp._id)
+    )
+    // Merge embedded property data with full property data
+    return fullProperty ? { ...fullProperty, ...embeddedProp } : embeddedProp
   })
-  
-  return Array.from(brokerMap.values())
 }
 
 // DRY: Status configuration
@@ -157,28 +139,26 @@ function ProjectManagement() {
         setLoading(true)
         setError(null)
         
-        const [projectsRes, propertiesRes] = await Promise.all([
-          fetchData('/projects'),
-          fetchData('/properties'),
-        ])
+        const projectsRes = await fetchData('/projects')
         
         if (projectsRes.success) {
-          const projectsData = projectsRes.data || []
-          setProjects(Array.isArray(projectsData) ? projectsData : [])
-          console.log('Projects loaded:', projectsData.length)
+          const projectsData = Array.isArray(projectsRes.data) ? projectsRes.data : []
+          setProjects(projectsData)
+
+          // Derive properties from embedded project data (new API response)
+          const derivedProperties = projectsData.flatMap(p =>
+            Array.isArray(p.properties)
+              ? p.properties.map(prop => ({
+                  ...prop,
+                  projectId: prop.projectId || p.id || p._id, // ensure projectId present
+                }))
+              : []
+          )
+          setProperties(derivedProperties)
+          console.log('Projects loaded:', projectsData.length, 'Properties derived:', derivedProperties.length)
         } else {
           console.error('Failed to load projects:', projectsRes.error)
           setProjects([])
-        }
-        
-        if (propertiesRes.success) {
-          // Handle different response structures
-          const propsData = propertiesRes.data?.properties || propertiesRes.data || []
-          const propsArray = Array.isArray(propsData) ? propsData : []
-          setProperties(propsArray)
-          console.log('Properties loaded:', propsArray.length)
-        } else {
-          console.error('Failed to load properties:', propertiesRes.error)
           setProperties([])
         }
       } catch (err) {
@@ -223,13 +203,21 @@ function ProjectManagement() {
         selectedProject ? 'Project updated successfully!' : 'Project created successfully!',
         'success'
       )
-      // Reload data
-      const [projectsRes, propertiesRes] = await Promise.all([
-        fetchData('/projects'),
-        fetchData('/properties'),
-      ])
-      if (projectsRes.success) setProjects(projectsRes.data || [])
-      if (propertiesRes.success) setProperties(propertiesRes.data || [])
+      // Reload data (projects now include embedded properties)
+      const projectsRes = await fetchData('/projects')
+      if (projectsRes.success) {
+        const projectsData = Array.isArray(projectsRes.data) ? projectsRes.data : []
+        setProjects(projectsData)
+        const derivedProperties = projectsData.flatMap(p =>
+          Array.isArray(p.properties)
+            ? p.properties.map(prop => ({
+                ...prop,
+                projectId: prop.projectId || p.id || p._id,
+              }))
+            : []
+        )
+        setProperties(derivedProperties)
+      }
       
       setShowModal(false)
       setSelectedProject(null)
@@ -344,51 +332,24 @@ function ProjectManagement() {
       },
     },
     {
-      id: "buyers",
+      id: "properties",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Buyers" />
+        <DataTableColumnHeader column={column} title="Properties" />
       ),
       cell: ({ row }) => {
-        const buyers = getProjectBuyers(row.original.id, properties)
+        const projectProps = getProjectProperties(row.original.id, properties, projects)
         return (
           <div className="assignees-cell">
-            {buyers.length > 0 ? (
+            {projectProps.length > 0 ? (
               <>
                 <div className="assignees-avatars">
-                  {buyers.slice(0, 3).map((buyer, idx) => (
-                    <div key={buyer.id || buyer._id || idx} className="assignee-avatar">
-                      {buyer.name?.charAt(0) || '?'}
+                  {projectProps.slice(0, 3).map((prop, idx) => (
+                    <div key={prop.id || prop._id || idx} className="assignee-avatar">
+                      {(prop.id || prop._id || '').toString().slice(0, 2).toUpperCase() || 'P'}
                     </div>
                   ))}
                 </div>
-                <span className="assignees-count">{buyers.length}</span>
-              </>
-            ) : (
-              <span className="no-assignees">None</span>
-            )}
-          </div>
-        )
-      },
-    },
-    {
-      id: "brokers",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Brokers" />
-      ),
-      cell: ({ row }) => {
-        const brokers = getProjectBrokers(row.original.id, properties)
-        return (
-          <div className="assignees-cell">
-            {brokers.length > 0 ? (
-              <>
-                <div className="assignees-avatars">
-                  {brokers.slice(0, 3).map((broker, idx) => (
-                    <div key={broker.id || broker._id || idx} className="assignee-avatar broker-avatar">
-                      {broker.name?.charAt(0) || '?'}
-                    </div>
-                  ))}
-                </div>
-                <span className="assignees-count">{brokers.length}</span>
+                <span className="assignees-count">{projectProps.length}</span>
               </>
             ) : (
               <span className="no-assignees">None</span>
@@ -452,7 +413,7 @@ function ProjectManagement() {
         )
       },
     },
-  ], [properties])
+  ], [properties, projects])
 
   const table = useReactTable({
     data: filteredProjects,
@@ -812,34 +773,75 @@ function ProjectManagement() {
               </div>
 
               <div className="details-section">
-                <h4>Buyers from Properties ({getProjectBuyers(selectedProject.id, properties).length})</h4>
-                {getProjectBuyers(selectedProject.id, properties).length > 0 ? (
+                <h4>Properties ({getProjectProperties(selectedProject.id, properties, projects).length})</h4>
+                {getProjectProperties(selectedProject.id, properties, projects).length > 0 ? (
                   <div className="assignments-list">
-                    {getProjectBuyers(selectedProject.id, properties).map((buyer, idx) => (
-                      <div key={buyer.id || buyer._id || idx} className="assignment-item">
-                        <span>👤 {buyer.name}</span>
-                        <span className="assignment-meta">{buyer.email || 'N/A'}</span>
-                      </div>
-                    ))}
+                    {getProjectProperties(selectedProject.id, properties, projects).map((prop, idx) => {
+                      const propertyId = prop.id || prop._id
+                      const flatNo = prop.flatNo || 'N/A'
+                      const buildingName = prop.buildingName || ''
+                      const totalPrice = prop.pricing?.totalPrice 
+                        ? `₹${parseFloat(prop.pricing.totalPrice).toLocaleString('en-IN')}` 
+                        : prop.soldPrice 
+                          ? `₹${parseFloat(prop.soldPrice).toLocaleString('en-IN')}` 
+                          : 'N/A'
+                      const area = prop.specifications?.area 
+                        ? `${prop.specifications.area} sq.ft` 
+                        : ''
+                      const bedrooms = prop.specifications?.bedrooms || ''
+                      const hasBuyer = !!(prop.buyer || prop.buyerId)
+                      const status = hasBuyer ? 'sold' : (prop.status || 'active')
+                      
+                      // Buyer and brokers from property/project data
+                      const buyerId = prop.buyerId
+                      const brokerId = prop.brokerId
+                      const buyer = selectedProject.buyers?.find(b => (b.id || b._id) === buyerId) || prop.buyer
+                      const brokerPrimary = selectedProject.brokers?.find(b => (b.id || b._id) === brokerId) || prop.broker
+                      const brokerList = Array.isArray(prop.brokers) ? prop.brokers : []
+                      
+                      return (
+                        <div key={propertyId || idx} className="assignment-item property-detail-item">
+                          <div className="property-main-info">
+                            <span className="property-icon">🏠</span>
+                            <div className="property-info">
+                              <div className="property-title">
+                                {flatNo !== 'N/A' ? `Flat ${flatNo}` : `Property ${propertyId?.slice(-6) || idx + 1}`}
+                                {buildingName && <span className="property-building"> - {buildingName}</span>}
+                                <span className={`property-status ${status}`}>{status}</span>
+                              </div>
+                              <div className="property-details">
+                                {totalPrice !== 'N/A' && <span>Price: {totalPrice}</span>}
+                                {area && <span>Area: {area}</span>}
+                                {bedrooms && <span>{bedrooms} BHK</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="property-assignments">
+                            {buyer ? (
+                              <>
+                                <span className="assignment-badge buyer">👤 Buyer: {buyer.name}</span>
+                                {brokerPrimary && (
+                                  <span className="assignment-badge broker">🤝 Broker: {brokerPrimary.name}</span>
+                                )}
+                              </>
+                            ) : brokerList.length > 0 || brokerPrimary ? (
+                              <>
+                                {(brokerPrimary ? [brokerPrimary] : brokerList).map((bk, i) => (
+                                  <span key={bk.id || bk._id || i} className="assignment-badge broker">
+                                    🤝 Broker: {bk.name}
+                                  </span>
+                                ))}
+                              </>
+                            ) : (
+                              <span className="assignment-badge unassigned">Unassigned</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
-                  <p className="no-assignments">No buyers assigned to properties in this project</p>
-                )}
-              </div>
-
-              <div className="details-section">
-                <h4>Associated Brokers ({getProjectBrokers(selectedProject.id, properties).length})</h4>
-                {getProjectBrokers(selectedProject.id, properties).length > 0 ? (
-                  <div className="assignments-list">
-                    {getProjectBrokers(selectedProject.id, properties).map((broker, idx) => (
-                      <div key={broker.id || broker._id || idx} className="assignment-item">
-                        <span>🤝 {broker.name}</span>
-                        <span className="assignment-meta">{broker.email || 'N/A'} {broker.company ? `- ${broker.company}` : ''}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-assignments">No brokers associated (brokers are assigned at property level)</p>
+                  <p className="no-assignments">No properties linked to this project</p>
                 )}
               </div>
 

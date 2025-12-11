@@ -1,32 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import './Header.css'
 import { Menu, Search, Bell, LogOut } from 'lucide-react'
+import { useAuth } from '../../contexts/AuthContext'
+import { useConfirmation } from '../../hooks/useConfirmation'
+import ConfirmationModal from '../ConfirmationModal/ConfirmationModal'
 
-function Header({ onMenuClick, onLogout }) {
-  const [adminUser, setAdminUser] = useState(null)
+function Header({ onMenuClick }) {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const { confirmation, confirm, close, handleConfirm, handleCancel } = useConfirmation()
 
-  useEffect(() => {
-    const userStr = localStorage.getItem('adminUser')
-    if (userStr) {
-      try {
-        setAdminUser(JSON.parse(userStr))
-      } catch (err) {
-        console.error('Error parsing admin user:', err)
-      }
-    }
-  }, [])
-
-  const handleLogout = () => {
-    if (window.confirm('Are you sure you want to logout?')) {
-      if (onLogout) {
-        onLogout()
-      }
+  const handleLogout = async () => {
+    const confirmed = await confirm({
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to logout?',
+      variant: 'default'
+    })
+    
+    if (confirmed) {
+      await logout()
+      navigate('/login')
     }
   }
 
-  const userInitial = adminUser?.name?.charAt(0)?.toUpperCase() || 'A'
-  const userName = adminUser?.name || 'Admin'
-  const userEmail = adminUser?.email || 'admin@applore.in'
+  const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'A'
+  const userName = user?.name || 'Admin'
+  const userEmail = user?.email || 'admin@applore.in'
+  const userRole = user?.role === 'superadmin' ? 'Superadmin' : 'Admin'
 
   return (
     <header className="header">
@@ -52,7 +52,7 @@ function Header({ onMenuClick, onLogout }) {
             <div className="user-avatar">{userInitial}</div>
             <div className="user-info">
               <span className="user-name">{userName}</span>
-              <span className="user-role">{userEmail}</span>
+              <span className="user-role">{userRole}</span>
             </div>
           </div>
 
@@ -61,6 +61,17 @@ function Header({ onMenuClick, onLogout }) {
           </button>
         </div>
       </div>
+      {confirmation.show && (
+        <ConfirmationModal
+          isOpen={confirmation.show}
+          title={confirmation.title}
+          message={confirmation.message}
+          variant={confirmation.variant}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+          onClose={close}
+        />
+      )}
     </header>
   )
 }

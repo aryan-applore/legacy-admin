@@ -91,8 +91,6 @@ function  PropertyManagement() {
   const [loadingProgress, setLoadingProgress] = useState(false)
   const [loadingGallery, setLoadingGallery] = useState(false)
   const [savingProperty, setSavingProperty] = useState(false)
-  const [documents, setDocuments] = useState([])
-  const [loadingDocuments, setLoadingDocuments] = useState(false)
   const [showInstalmentsModal, setShowInstalmentsModal] = useState(false)
   const [instalmentsData, setInstalmentsData] = useState(null)
   const [loadingInstalments, setLoadingInstalments] = useState(false)
@@ -105,6 +103,8 @@ function  PropertyManagement() {
   const [availableBuyers, setAvailableBuyers] = useState([])
   const [availableBrokers, setAvailableBrokers] = useState([])
   const [loadingAssign, setLoadingAssign] = useState(false)
+  const [pendingGalleryFiles, setPendingGalleryFiles] = useState([])
+  // Documents flow moved to Documents page (disabled here)
   
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -320,8 +320,6 @@ function  PropertyManagement() {
       setGalleryImages([])
     }
     
-    // Fetch documents
-    await fetchPropertyDocuments(property.id)
   }
 
   const fetchPropertyProgress = async (propertyId) => {
@@ -330,7 +328,10 @@ function  PropertyManagement() {
 
       const data = await fetchData(`/properties/${propertyId}/progress`)
       if (data.success) {
-        setProgressData(data.data)
+        setProgressData({
+          ...data.data,
+          currentStage: normalizeStage(data.data?.currentStage || data.data?.stage)
+        })
       }
     } catch (err) {
       console.error('Error fetching progress:', err)
@@ -355,46 +356,6 @@ function  PropertyManagement() {
     }
   }
 
-  const fetchPropertyDocuments = async (propertyId) => {
-    try {
-      setLoadingDocuments(true)
-      const propertyData = await fetchData(`/properties/${propertyId}`)
-      
-      if (propertyData.success && propertyData.data) {
-        const property = propertyData.data
-        const buyerId = property.buyerId || property.buyer?.id || property.buyer?._id
-        
-        if (buyerId) {
-          const documentsData = await fetchData(
-            `/documents?buyerId=${buyerId}&propertyId=${propertyId}&all=true`
-          )
-          
-          if (documentsData.success && documentsData.data) {
-            const docs = documentsData.data.documents || documentsData.data || []
-            setDocuments(docs.map(doc => ({
-              id: doc.id || doc._id,
-              name: doc.name,
-              type: doc.type,
-              fileName: doc.fileName,
-              fileSize: doc.fileSize,
-              downloadUrl: doc.downloadUrl || `/api/documents/${doc.id || doc._id}/download`,
-              uploadedAt: doc.uploadedAt || doc.createdAt
-            })))
-          } else {
-            setDocuments([])
-          }
-        } else {
-          setDocuments([])
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching documents:', err)
-      setDocuments([])
-    } finally {
-      setLoadingDocuments(false)
-    }
-  }
-
   const handleEditProgress = () => {
     setShowEditProgressModal(true)
   }
@@ -416,9 +377,13 @@ function  PropertyManagement() {
       } else if (stageLower.includes('finishing')) {
         normalizedStage = 'finishing'
       } else {
-        // If it doesn't match known stages, keep empty to show "None"
+        // If it doesn't match known stages, keep empty
         normalizedStage = ''
       }
+    }
+    // Ensure a default stage when missing
+    if (!normalizedStage) {
+      normalizedStage = 'foundation'
     }
     
     // Initialize edit data with current property values
@@ -554,21 +519,36 @@ function  PropertyManagement() {
       showNotification('Please select a project', 'error')
       return
     }
+    if (!addPropertyData.currentStage) {
+      showNotification('Please select the current stage', 'error')
+      return
+    }
 
     try {
       setSavingProperty(true)
       const createPayload = preparePropertyPayload(addPropertyData, false)
-
-
 
       const data = await fetchData('/properties', {
         method: 'POST',
         body: JSON.stringify(createPayload)
       })
       if (data.success) {
+        const newPropertyId = data.data?.id || data.data?._id
+        // Upload queued gallery files after property is created
+        if (newPropertyId && pendingGalleryFiles.length > 0) {
+          for (const item of pendingGalleryFiles) {
+            try {
+              await handleUploadGalleryImage(item.file, item.caption, newPropertyId)
+            } catch (err) {
+              console.error('Error uploading queued gallery file:', err)
+            }
+          }
+        }
+
         showNotification('Property created successfully!', 'success')
         setShowAddPropertyModal(false)
         setAddPropertyData(null)
+        setPendingGalleryFiles([])
         // Refresh properties list
         window.location.reload()
       } else {
@@ -603,7 +583,7 @@ function  PropertyManagement() {
       status: 'active',
       possessionDate: '',
       progressPercentage: 0,
-      currentStage: ''
+      currentStage: 'foundation'
     })
     setShowAddPropertyModal(true)
   }
@@ -634,6 +614,10 @@ function  PropertyManagement() {
 
   const handleSaveProgress = async () => {
     if (!selectedProperty || !progressData) return
+    if (!progressData.currentStage) {
+      showNotification('Please select the current stage', 'error')
+      return
+    }
 
     try {
 
@@ -641,7 +625,7 @@ function  PropertyManagement() {
         method: 'PUT',
         body: JSON.stringify({
           overallProgress: progressData.overallProgress,
-          currentStage: progressData.currentStage,
+          currentStage: normalizeStage(progressData.currentStage),
           stages: progressData.stages
         })
       })
@@ -681,8 +665,13 @@ function  PropertyManagement() {
     })
   }
 
-  const handleUploadGalleryImage = async (file, caption) => {
-    if (!selectedProperty || !file) return
+  const handleQueueGalleryFile = (file, caption) => {
+    setPendingGalleryFiles(prev => [...prev, { file, caption }])
+  }
+
+  const handleUploadGalleryImage = async (file, caption, propertyIdOverride = null) => {
+    const targetPropertyId = propertyIdOverride || selectedProperty?.id
+    if (!targetPropertyId || !file) return
 
     try {
       // Create FormData for file upload
@@ -692,9 +681,7 @@ function  PropertyManagement() {
         formData.append('caption', caption)
       }
 
-
-
-      const data = await fetchData(`/properties/${selectedProperty.id}/gallery`, {
+      const data = await fetchData(`/properties/${targetPropertyId}/gallery`, {
         method: 'POST',
         body: formData,
         // Don't set Content-Type header - browser will set it automatically with boundary for FormData
@@ -702,59 +689,15 @@ function  PropertyManagement() {
       })
       if (data.success) {
         showNotification('Image uploaded successfully!', 'success')
+        if (!propertyIdOverride && selectedProperty?.id) {
         await fetchPropertyGallery(selectedProperty.id)
+        }
       } else {
         showNotification(data.error || 'Failed to upload image', 'error')
       }
     } catch (err) {
       console.error('Error uploading image:', err)
       showNotification('Failed to upload image', 'error')
-    }
-  }
-
-  const handleUploadDocument = async (file, documentType, documentTitle, description) => {
-    if (!selectedProperty || !file) return
-
-    try {
-      const propertyData = await fetchData(`/properties/${selectedProperty.id}`)
-      
-      if (!propertyData.success || !propertyData.data) {
-        showNotification('Failed to get property information', 'error')
-        return
-      }
-      
-      const property = propertyData.data
-      const buyerId = property.buyerId || property.buyer?.id || property.buyer?._id
-      
-      if (!buyerId) {
-        showNotification('Property must have an assigned buyer to upload documents', 'error')
-        return
-      }
-
-      const formData = new FormData()
-      formData.append('document', file)
-      formData.append('documentType', documentType)
-      formData.append('documentTitle', documentTitle)
-      formData.append('propertyId', selectedProperty.id)
-      formData.append('buyerId', buyerId)
-      if (description) {
-        formData.append('description', description)
-      }
-
-      const data = await fetchData('/documents', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (data.success) {
-        showNotification('Document uploaded successfully!', 'success')
-        await fetchPropertyDocuments(selectedProperty.id)
-      } else {
-        showNotification(data.error || 'Failed to upload document', 'error')
-      }
-    } catch (err) {
-      console.error('Error uploading document:', err)
-      showNotification('Failed to upload document', 'error')
     }
   }
 
@@ -1015,7 +958,7 @@ function  PropertyManagement() {
 
   // Normalize current stage for display (matches radio button values)
   const getDisplayStage = (stage) => {
-    if (!stage || stage.trim() === '') return 'None'
+    if (!stage || stage.trim() === '') return ''
     const stageLower = stage.toLowerCase()
     if (stageLower.includes('foundation')) {
       return 'Foundation'
@@ -1799,21 +1742,29 @@ function  PropertyManagement() {
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
                   Current Stage
                 </label>
+                <div style={{ display: 'flex', gap: '16px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  {[
+                    { value: 'foundation', label: 'Foundation' },
+                    { value: 'structure', label: 'Structure' },
+                    { value: 'finishing', label: 'Finishing' },
+                  ].map(option => (
+                    <label key={option.value} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                 <input
-                  type="text"
-                  value={progressData.currentStage || ''}
+                        type="radio"
+                        name="progressCurrentStage"
+                        value={option.value}
+                        checked={progressData.currentStage === option.value}
                   onChange={(e) => setProgressData({
                     ...progressData,
                     currentStage: e.target.value
                   })}
-                  placeholder="e.g., Structure Work"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px'
-                  }}
-                />
+                        style={{ marginRight: '8px', width: '18px', height: '18px', cursor: 'pointer' }}
+                        required
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -1946,7 +1897,10 @@ function  PropertyManagement() {
                 onChange={setAddPropertyData}
                 projects={projects}
                 isEditMode={false}
-                showGallery={false}
+        showGallery={true}
+        showDocuments={false}
+        pendingGalleryFiles={pendingGalleryFiles}
+        onQueueGalleryFile={handleQueueGalleryFile}
               />
               <div className="modal-actions" style={{ marginTop: '24px' }}>
                 <button 
@@ -1993,6 +1947,7 @@ function  PropertyManagement() {
                 projects={projects}
                 isEditMode={true}
                 showGallery={true}
+        showDocuments={false}
                 galleryImages={galleryImages}
                 loadingGallery={loadingGallery}
                 onUploadGalleryImage={handleUploadGalleryImage}

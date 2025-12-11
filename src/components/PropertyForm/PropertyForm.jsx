@@ -7,12 +7,17 @@ function PropertyForm({
   projects = [], 
   isEditMode = false,
   showGallery = false,
+  showDocuments = false,
   galleryImages = [],
   loadingGallery = false,
   onUploadGalleryImage,
+  onQueueGalleryFile,
+  pendingGalleryFiles = [],
   documents = [],
   loadingDocuments = false,
   onUploadDocument,
+  onQueueDocument,
+  pendingDocuments = [],
   onDeleteDocument
 }) {
   const [galleryFile, setGalleryFile] = useState(null)
@@ -45,7 +50,7 @@ function PropertyForm({
     status: 'active',
     possessionDate: '',
     progressPercentage: 0,
-    currentStage: ''
+    currentStage: 'foundation'
   }
 
   const handleInputChange = (field, value) => {
@@ -433,6 +438,7 @@ function PropertyForm({
               checked={formData.currentStage === 'foundation'}
               onChange={(e) => handleInputChange('currentStage', e.target.value)}
               style={{ marginRight: '8px', width: '18px', height: '18px', cursor: 'pointer' }}
+              required
             />
             <span>Foundation</span>
           </label>
@@ -458,65 +464,71 @@ function PropertyForm({
             />
             <span>Finishing</span>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-            <input
-              type="radio"
-              name="currentStage"
-              value=""
-              checked={!formData.currentStage || (formData.currentStage !== 'foundation' && formData.currentStage !== 'structure' && formData.currentStage !== 'finishing')}
-              onChange={(e) => handleInputChange('currentStage', '')}
-              style={{ marginRight: '8px', width: '18px', height: '18px', cursor: 'pointer' }}
-            />
-            <span>None</span>
-          </label>
         </div>
       </div>
 
-      {/* Gallery Section (only in edit mode) */}
-      {showGallery && isEditMode && (
+      {/* Gallery Section (edit or create) */}
+      {showGallery && (
         <div className="details-section" style={{ marginTop: '24px' }}>
           <h4 style={{ marginBottom: '12px' }}>Project Gallery</h4>
-          {loadingGallery ? (
-            <p style={{ color: 'var(--text-secondary)' }}>Loading gallery...</p>
-          ) : galleryImages.length > 0 ? (
-            <div className="gallery-grid" style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', 
-              gap: '12px',
-              marginTop: '12px',
-              marginBottom: '12px'
-            }}>
-              {galleryImages.map((img) => (
-                <div key={img.id} className="gallery-item" style={{ position: 'relative' }}>
-                  <img 
-                    src={img.url} 
-                    alt={img.caption || 'Gallery image'} 
-                    style={{ 
-                      width: '100%', 
-                      height: '120px', 
-                      objectFit: 'cover', 
-                      borderRadius: '8px',
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => window.open(img.url, '_blank')}
-                  />
-                  {img.caption && (
-                    <p style={{ 
-                      fontSize: '0.75em', 
-                      color: 'var(--text-secondary)', 
-                      marginTop: '4px',
-                      textOverflow: 'ellipsis',
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {img.caption}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
+          {isEditMode ? (
+            loadingGallery ? (
+              <p style={{ color: 'var(--text-secondary)' }}>Loading gallery...</p>
+            ) : galleryImages.length > 0 ? (
+              <div className="gallery-grid" style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', 
+                gap: '12px',
+                marginTop: '12px',
+                marginBottom: '12px'
+              }}>
+                {galleryImages.map((img) => (
+                  <div key={img.id} className="gallery-item" style={{ position: 'relative' }}>
+                    <img 
+                      src={img.url} 
+                      alt={img.caption || 'Gallery image'} 
+                      style={{ 
+                        width: '100%', 
+                        height: '120px', 
+                        objectFit: 'cover', 
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => window.open(img.url, '_blank')}
+                    />
+                    {img.caption && (
+                      <p style={{ 
+                        fontSize: '0.75em', 
+                        color: 'var(--text-secondary)', 
+                        marginTop: '4px',
+                        textOverflow: 'ellipsis',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {img.caption}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>No gallery images yet</p>
+            )
           ) : (
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>No gallery images yet</p>
+            pendingGalleryFiles.length > 0 ? (
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>Queued gallery images:</p>
+                <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                  {pendingGalleryFiles.map((item, idx) => (
+                    <li key={idx} style={{ fontSize: '0.9em', color: 'var(--text-secondary)' }}>
+                      {item.file?.name || 'Image'} {item.caption ? `- ${item.caption}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>No gallery images queued</p>
+            )
           )}
           <div style={{ marginTop: '12px' }}>
             <input
@@ -555,19 +567,38 @@ function PropertyForm({
                 borderRadius: '4px'
               }}
             />
-            <button 
-              className="btn btn-primary" 
-              onClick={handleUploadGallery}
-              disabled={!galleryFile || uploadingImage}
-            >
-              {uploadingImage ? 'Uploading...' : 'Upload Gallery Image'}
-            </button>
+            {isEditMode ? (
+              <button 
+                className="btn btn-primary" 
+                onClick={handleUploadGallery}
+                disabled={!galleryFile || uploadingImage}
+              >
+                {uploadingImage ? 'Uploading...' : 'Upload Gallery Image'}
+              </button>
+            ) : (
+              <button 
+                className="btn btn-primary" 
+                onClick={() => {
+                  if (!galleryFile) return
+                  if (onQueueGalleryFile) {
+                    onQueueGalleryFile(galleryFile, galleryCaption)
+                    setGalleryFile(null)
+                    setGalleryCaption('')
+                    const fileInput = document.getElementById('gallery-file-input')
+                    if (fileInput) fileInput.value = ''
+                  }
+                }}
+                disabled={!galleryFile}
+              >
+                Add to Gallery Queue
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Documents Section (only in edit mode) */}
-      {isEditMode && (
+      {/* Documents Section is disabled here; use Document Management page */}
+      {showDocuments && isEditMode && (
         <div className="details-section" style={{ marginTop: '24px' }}>
           <h4 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FileText size={18} />

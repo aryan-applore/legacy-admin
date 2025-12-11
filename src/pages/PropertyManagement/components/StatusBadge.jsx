@@ -6,16 +6,18 @@ export const StatusBadge = ({ status, type = 'status' }) => {
       return getStageColorClass(status)
     }
     // For property status
-    const statusLower = status.toLowerCase()
+    const statusLower = (status || '').toLowerCase()
     if (statusLower === 'active') return 'status-success'
     if (statusLower === 'completed') return 'status-info'
     return 'status-error'
   }
   
   return (
-    <span className={`status-badge ${getStatusClass()}`}>
-      {status}
-    </span>
+    status ? (
+      <span className={`status-badge ${getStatusClass()}`}>
+        {status}
+      </span>
+    ) : null
   )
 }
 

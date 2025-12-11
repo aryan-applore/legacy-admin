@@ -1,0 +1,139 @@
+.permission-assignment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.permission-matrix-container {
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--card));
+}
+
+.permission-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.permission-matrix thead {
+  background: hsl(var(--muted));
+}
+
+.permission-matrix th {
+  padding: 12px;
+  text-align: center;
+  font-weight: 600;
+  border-bottom: 2px solid hsl(var(--border));
+  position: sticky;
+  top: 0;
+  background: hsl(var(--muted));
+  z-index: 1;
+}
+
+.permission-matrix th:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: hsl(var(--muted));
+  z-index: 2;
+}
+
+.permission-matrix td {
+  padding: 12px;
+  text-align: center;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.permission-matrix td:first-child {
+  position: sticky;
+  left: 0;
+  background: hsl(var(--card));
+  z-index: 1;
+}
+
+.permission-matrix tbody tr:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.resource-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.select-all-resource-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+  transition: all 0.2s;
+}
+
+.select-all-resource-btn:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.select-all-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  transition: all 0.2s;
+}
+
+.select-all-btn:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+.permission-matrix input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.permission-summary {
+  padding: 16px;
+  background: hsl(var(--muted));
+  border-radius: 8px;
+}
+
+.permission-summary h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.permission-summary ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: none;
+}
+
+.permission-summary li {
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.permission-summary .no-permissions {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+

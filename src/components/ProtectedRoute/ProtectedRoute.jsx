@@ -1,56 +1,71 @@
 import { Navigate } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 
-function ProtectedRoute({ children, requiredPermission }) {
-  // Get current user from localStorage
-  const getCurrentUser = () => {
-    try {
-      const userStr = localStorage.getItem('adminUser')
-      return userStr ? JSON.parse(userStr) : null
-    } catch (err) {
-      console.error('Error parsing user:', err)
-      return null
-    }
+/**
+ * ProtectedRoute - Protects routes based on permissions
+ * 
+ * @param {React.ReactNode} children - The component to render if user has permission
+ * @param {object} requiredPermission - Object with resource and action
+ * @param {string} requiredPermission.resource - The resource name (e.g., 'buyers', 'projects')
+ * @param {string} requiredPermission.action - The action name (e.g., 'read', 'create', 'update', 'delete')
+ * @param {boolean} superadminOnly - If true, only superadmin can access
+ */
+function ProtectedRoute({ children, requiredPermission, superadminOnly = false }) {
+  const { user, loading, hasPermission, isSuperAdmin, hasAnyPermission } = useAuth()
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #1A2B3C 0%, #2A3F54 100%)'
+      }}>
+        <div style={{ color: 'white', fontSize: '18px' }}>Loading...</div>
+      </div>
+    )
   }
 
-  const currentUser = getCurrentUser()
+  // Redirect to login if not authenticated
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
 
-  // Admins have access to everything
-  if (currentUser?.role === 'admin') {
+  // Check superadmin only routes
+  if (superadminOnly && !isSuperAdmin()) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        minHeight: '60vh',
+        padding: '40px',
+        textAlign: 'center'
+      }}>
+        <h2 style={{ color: '#ef4444', marginBottom: '16px' }}>Access Denied</h2>
+        <p style={{ color: '#6b7280', fontSize: '16px' }}>
+          This page is only accessible to superadmin users.
+        </p>
+      </div>
+    )
+  }
+
+  // If no permission required, allow access
+  if (!requiredPermission) {
     return children
   }
 
   // Check if user has the required permission
-  const userPermissions = currentUser?.permissions || []
+  const { resource, action } = requiredPermission
   
-  if (!requiredPermission || userPermissions.includes(requiredPermission)) {
+  if (hasPermission(resource, action)) {
     return children
   }
 
-  // If user doesn't have permission, redirect to first available page
-  if (userPermissions.length > 0) {
-    const permissionToPathMap = {
-      'dashboard': '/',
-      'users': '/users',
-      'buyers': '/users/buyers',
-      'brokers': '/users/brokers',
-      'suppliers': '/users/suppliers',
-      'project-management': '/projects',
-      'property-management': '/projects/properties',
-      'marketing': '/projects/marketing',
-      'documents': '/projects/documents',
-      'product-management': '/product',
-      'order-management': '/order',
-      'support': '/support',
-      'notifications': '/notifications',
-      'profile': '/profile'
-    }
-    
-    // Find first available page user has access to
-    const firstAvailablePath = permissionToPathMap[userPermissions[0]] || '/'
-    return <Navigate to={firstAvailablePath} replace />
-  }
-
-  // If user has no permissions at all, show access denied or redirect to dashboard
+  // If user doesn't have permission, show access denied
   return (
     <div style={{ 
       display: 'flex', 
@@ -64,6 +79,9 @@ function ProtectedRoute({ children, requiredPermission }) {
       <h2 style={{ color: '#ef4444', marginBottom: '16px' }}>Access Denied</h2>
       <p style={{ color: '#6b7280', fontSize: '16px' }}>
         You don't have permission to access this page.
+      </p>
+      <p style={{ color: '#6b7280', fontSize: '14px', marginTop: '8px' }}>
+        Required: {resource}.{action}
       </p>
       <p style={{ color: '#6b7280', fontSize: '14px', marginTop: '8px' }}>
         Please contact your administrator to request access.
