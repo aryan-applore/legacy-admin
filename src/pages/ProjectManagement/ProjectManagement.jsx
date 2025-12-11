@@ -63,8 +63,11 @@ const calculateStats = (projects, properties) => {
     ? Math.round(projects.reduce((sum, p) => sum + (p.progressPercentage || 0), 0) / total)
     : 0
   
-  // Get unique buyers from projects
-  const allBuyerIds = new Set(projects.flatMap(p => p.buyers?.map(b => b.id || b._id) || []))
+  // Get unique buyers from properties (not from projects)
+  const allBuyerIds = new Set(properties.flatMap(p => {
+    const buyers = p.buyers || (p.buyer ? [p.buyer] : [])
+    return buyers.map(b => b.id || b._id).filter(Boolean)
+  }))
   
   // Get unique brokers from properties
   const allBrokerIds = new Set(properties.flatMap(p => {
@@ -79,6 +82,27 @@ const calculateStats = (projects, properties) => {
     totalBuyers: allBuyerIds.size,
     totalBrokers: allBrokerIds.size,
   }
+}
+
+// DRY: Get buyers for a project (aggregated from properties)
+const getProjectBuyers = (projectId, properties) => {
+  const projectProperties = properties.filter(p => {
+    const propProjectId = p.projectId?.id || p.projectId?._id || p.projectId
+    return propProjectId === projectId
+  })
+  
+  const buyerMap = new Map()
+  projectProperties.forEach(prop => {
+    const buyers = prop.buyers || (prop.buyer ? [prop.buyer] : [])
+    buyers.forEach(buyer => {
+      const id = buyer.id || buyer._id
+      if (id && !buyerMap.has(id)) {
+        buyerMap.set(id, buyer)
+      }
+    })
+  })
+  
+  return Array.from(buyerMap.values())
 }
 
 // DRY: Get brokers for a project (aggregated from properties)
@@ -117,9 +141,6 @@ function ProjectManagement() {
   const [showModal, setShowModal] = useState(false)
   const [selectedProject, setSelectedProject] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [showAssignmentsModal, setShowAssignmentsModal] = useState(false)
-  const [availableBuyers, setAvailableBuyers] = useState([])
-  const [availableBrokers, setAvailableBrokers] = useState([])
   const [notification, showNotification] = useNotification()
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState('All Status')
@@ -186,8 +207,7 @@ function ProjectManagement() {
         state: formData.get('state'),
         pincode: formData.get('pincode')
       },
-      expectedHandoverDate: formData.get('expectedHandoverDate') || undefined,
-      buyers: Array.from(document.querySelectorAll('input[name="buyers"]:checked')).map(cb => cb.value)
+      expectedHandoverDate: formData.get('expectedHandoverDate') || undefined
     }
 
     const endpoint = selectedProject ? `/projects/${selectedProject.id}` : '/projects'
@@ -233,58 +253,6 @@ function ProjectManagement() {
     }
   }
 
-  // Load buyers/brokers only when assignment modal opens
-  useEffect(() => {
-    if (showAssignmentsModal) {
-      const loadUsers = async () => {
-        try {
-          const usersRes = await fetchData('/users')
-          if (usersRes.success) {
-            const allUsers = usersRes.data || []
-            // Filter buyers and brokers from unified users response
-            const buyersData = allUsers.filter(user => 
-              user.type === 'buyer' || user.role === 'buyer'
-            )
-            const brokersData = allUsers.filter(user => 
-              user.type === 'broker' || user.role === 'broker'
-            )
-            setAvailableBuyers(Array.isArray(buyersData) ? buyersData : [])
-            setAvailableBrokers(Array.isArray(brokersData) ? brokersData : [])
-          } else {
-            setAvailableBuyers([])
-            setAvailableBrokers([])
-          }
-        } catch (err) {
-          console.error('Error loading users:', err)
-          setAvailableBuyers([])
-          setAvailableBrokers([])
-        }
-      }
-      loadUsers()
-    }
-  }, [showAssignmentsModal, fetchData])
-
-  // DRY: Save assignments handler
-  const handleSaveAssignments = async (e) => {
-    e.preventDefault()
-    const selectedBuyers = Array.from(document.querySelectorAll('input[name="buyers"]:checked'))
-      .map(cb => cb.value)
-
-    const result = await fetchData(`/projects/${selectedProject.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ buyers: selectedBuyers })
-    })
-    
-    if (result.success) {
-      showNotification('Assignments updated successfully!', 'success')
-      const projectsRes = await fetchData('/projects')
-      if (projectsRes.success) setProjects(projectsRes.data || [])
-      setShowAssignmentsModal(false)
-      setSelectedProject(null)
-    } else {
-      showNotification(result.error || 'Failed to update assignments', 'error')
-    }
-  }
 
   // DRY: Action handlers
   const actions = {
@@ -295,10 +263,6 @@ function ProjectManagement() {
     edit: (project) => {
       setSelectedProject(project)
       setShowModal(true)
-    },
-    assign: (project) => {
-      setSelectedProject(project)
-      setShowAssignmentsModal(true)
     },
     delete: handleDelete,
   }
@@ -385,7 +349,7 @@ function ProjectManagement() {
         <DataTableColumnHeader column={column} title="Buyers" />
       ),
       cell: ({ row }) => {
-        const buyers = row.original.buyers || []
+        const buyers = getProjectBuyers(row.original.id, properties)
         return (
           <div className="assignees-cell">
             {buyers.length > 0 ? (
@@ -473,10 +437,6 @@ function ProjectManagement() {
                 <DropdownMenuItem onClick={() => actions.edit(project)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit Project
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => actions.assign(project)}>
-                  <Users className="mr-2 h-4 w-4" />
-                  Manage Assignments
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
@@ -852,10 +812,10 @@ function ProjectManagement() {
               </div>
 
               <div className="details-section">
-                <h4>Assigned Buyers ({selectedProject.buyers?.length || 0})</h4>
-                {selectedProject.buyers && selectedProject.buyers.length > 0 ? (
+                <h4>Buyers from Properties ({getProjectBuyers(selectedProject.id, properties).length})</h4>
+                {getProjectBuyers(selectedProject.id, properties).length > 0 ? (
                   <div className="assignments-list">
-                    {selectedProject.buyers.map((buyer, idx) => (
+                    {getProjectBuyers(selectedProject.id, properties).map((buyer, idx) => (
                       <div key={buyer.id || buyer._id || idx} className="assignment-item">
                         <span>👤 {buyer.name}</span>
                         <span className="assignment-meta">{buyer.email || 'N/A'}</span>
@@ -863,7 +823,7 @@ function ProjectManagement() {
                     ))}
                   </div>
                 ) : (
-                  <p className="no-assignments">No buyers assigned</p>
+                  <p className="no-assignments">No buyers assigned to properties in this project</p>
                 )}
               </div>
 
@@ -896,55 +856,6 @@ function ProjectManagement() {
         </div>
       )}
 
-      {/* Assignments Modal */}
-      {showAssignmentsModal && selectedProject && (
-        <div className="modal-overlay" onClick={() => { setShowAssignmentsModal(false); setSelectedProject(null); }}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Manage Assignments - {selectedProject.name}</h2>
-              <button className="close-btn" onClick={() => { setShowAssignmentsModal(false); setSelectedProject(null); }}>×</button>
-            </div>
-            <form onSubmit={handleSaveAssignments} className="assignment-form">
-              <div className="assignment-section">
-                <h3 className="section-title">Assign Buyers ({availableBuyers.length} available)</h3>
-                {availableBuyers.length > 0 ? (
-                  <div className="assignment-checkboxes">
-                    {availableBuyers.map(buyer => {
-                      const buyerId = buyer.id || buyer._id
-                      const isChecked = selectedProject.buyers?.some(b => (b.id || b._id) === buyerId)
-                      return (
-                        <label key={buyerId} className="assignment-checkbox-label">
-                          <input 
-                            type="checkbox" 
-                            name="buyers"
-                            value={buyerId}
-                            defaultChecked={isChecked}
-                          />
-                          <div className="assignment-info">
-                            <span className="assignment-name">👤 {buyer.name}</span>
-                            <span className="assignment-details">{buyer.email || 'N/A'}</span>
-                          </div>
-                        </label>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="no-assignments">No buyers available</p>
-                )}
-              </div>
-
-              <div className="form-actions">
-                <Button type="button" variant="outline" onClick={() => { setShowAssignmentsModal(false); setSelectedProject(null); }}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="btn btn-primary">
-                  Save Assignments
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Notification Toast */}
       {notification && (
