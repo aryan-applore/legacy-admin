@@ -8,13 +8,17 @@ export const useApiFetch = () => {
   const fetchData = async (endpoint, options = {}) => {
     try {
       const token = localStorage.getItem('adminToken')
+      const isFormData = options.body instanceof FormData
+      
+      const headers = {
+        ...(!isFormData && { 'Content-Type': 'application/json' }),
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...options.headers,
+      }
+      
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-          ...options.headers,
-        },
+        headers,
       })
       const data = await response.json()
       return { 

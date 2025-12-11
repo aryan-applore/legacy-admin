@@ -136,10 +136,9 @@ function ProjectManagement() {
         setLoading(true)
         setError(null)
         
-        const [projectsRes, propertiesRes, usersRes] = await Promise.all([
+        const [projectsRes, propertiesRes] = await Promise.all([
           fetchData('/projects'),
           fetchData('/properties'),
-          fetchData('/users'),
         ])
         
         if (projectsRes.success) {
@@ -161,25 +160,6 @@ function ProjectManagement() {
           console.error('Failed to load properties:', propertiesRes.error)
           setProperties([])
         }
-        
-        if (usersRes.success) {
-          const allUsers = usersRes.data || []
-          // Filter buyers and brokers from unified users response
-          const buyersData = allUsers.filter(user => 
-            user.type === 'buyer' || user.role === 'buyer'
-          )
-          const brokersData = allUsers.filter(user => 
-            user.type === 'broker' || user.role === 'broker'
-          )
-          setAvailableBuyers(Array.isArray(buyersData) ? buyersData : [])
-          setAvailableBrokers(Array.isArray(brokersData) ? brokersData : [])
-          console.log('Buyers loaded:', buyersData.length)
-          console.log('Brokers loaded:', brokersData.length)
-        } else {
-          console.error('Failed to load users:', usersRes.error)
-          setAvailableBuyers([])
-          setAvailableBrokers([])
-        }
       } catch (err) {
         console.error('Error loading data:', err)
         setError('Failed to load data. Please check if the backend server is running.')
@@ -200,7 +180,6 @@ function ProjectManagement() {
       name: formData.get('name'),
       status: formData.get('status'),
       progressPercentage: parseInt(formData.get('progressPercentage')) || 0,
-      currentStage: formData.get('currentStage'),
       location: {
         address: formData.get('address'),
         city: formData.get('city'),
@@ -253,6 +232,37 @@ function ProjectManagement() {
       showNotification(result.error || 'Failed to delete project', 'error')
     }
   }
+
+  // Load buyers/brokers only when assignment modal opens
+  useEffect(() => {
+    if (showAssignmentsModal) {
+      const loadUsers = async () => {
+        try {
+          const usersRes = await fetchData('/users')
+          if (usersRes.success) {
+            const allUsers = usersRes.data || []
+            // Filter buyers and brokers from unified users response
+            const buyersData = allUsers.filter(user => 
+              user.type === 'buyer' || user.role === 'buyer'
+            )
+            const brokersData = allUsers.filter(user => 
+              user.type === 'broker' || user.role === 'broker'
+            )
+            setAvailableBuyers(Array.isArray(buyersData) ? buyersData : [])
+            setAvailableBrokers(Array.isArray(brokersData) ? brokersData : [])
+          } else {
+            setAvailableBuyers([])
+            setAvailableBrokers([])
+          }
+        } catch (err) {
+          console.error('Error loading users:', err)
+          setAvailableBuyers([])
+          setAvailableBrokers([])
+        }
+      }
+      loadUsers()
+    }
+  }, [showAssignmentsModal, fetchData])
 
   // DRY: Save assignments handler
   const handleSaveAssignments = async (e) => {
@@ -648,12 +658,6 @@ function ProjectManagement() {
       {/* Projects Table */}
       <div className="card projects-table-card">
         <div className="flex items-center justify-between py-4 px-4">
-          <Input
-            placeholder="Filter projects..."
-            value={(table.getColumn("name")?.getFilterValue() ?? "")}
-            onChange={(event) => table.getColumn("name")?.setFilterValue(event.target.value)}
-            className="max-w-sm"
-          />
           <DataTableViewOptions table={table} />
         </div>
         <div className="overflow-hidden rounded-md border">
@@ -718,7 +722,8 @@ function ProjectManagement() {
               <h2>{selectedProject ? 'Edit Project' : 'Create New Project'}</h2>
               <button className="close-btn" onClick={() => { setShowModal(false); setSelectedProject(null); }}>×</button>
             </div>
-            <form onSubmit={handleSave} className="project-form">
+            <div className="modal-body">
+              <form onSubmit={handleSave} className="project-form">
               <div className="form-row">
                 <div className="form-group">
                   <label>Project Name *</label>
@@ -772,11 +777,6 @@ function ProjectManagement() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Current Stage</label>
-                <input name="currentStage" defaultValue={selectedProject?.currentStage} />
-              </div>
-
               <div className="form-actions">
                 <Button type="button" variant="outline" onClick={() => { setShowModal(false); setSelectedProject(null); }}>
                   Cancel
@@ -785,7 +785,8 @@ function ProjectManagement() {
                   {selectedProject ? 'Update Project' : 'Create Project'}
                 </Button>
               </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -819,10 +820,6 @@ function ProjectManagement() {
                   <div className="detail-item">
                     <label>Progress</label>
                     <p>{selectedProject.progressPercentage || 0}%</p>
-                  </div>
-                  <div className="detail-item">
-                    <label>Current Stage</label>
-                    <p>{selectedProject.currentStage || 'N/A'}</p>
                   </div>
                   <div className="detail-item">
                     <label>Expected Handover</label>

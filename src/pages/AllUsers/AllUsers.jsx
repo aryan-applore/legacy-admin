@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useApiFetch } from '../../lib/apiHelpers'
+import { useApiFetch, useNotification } from '../../lib/apiHelpers'
 import './AllUsers.css'
-import { Users, Handshake, Factory } from 'lucide-react'
+import { Users, Handshake, Factory, CheckCircle, X, PauseCircle, RotateCw } from 'lucide-react'
+import { useConfirmation } from '../../hooks/useConfirmation'
+import ConfirmationModal from '../../components/ConfirmationModal/ConfirmationModal'
 import {
   flexRender,
   getCoreRowModel,
@@ -26,9 +28,9 @@ import { DataTableViewOptions } from "@/components/data-table/data-table-view-op
 
 function AllUsers() {
   const { fetchData } = useApiFetch()
-  const [users, setUsers] = useState([])
-  const [brokers, setBrokers] = useState([])
-  const [suppliers, setSuppliers] = useState([])
+  const [notification, showNotification] = useNotification()
+  const { confirmation, confirm, close, handleConfirm, handleCancel } = useConfirmation()
+  const [allUsers, setAllUsers] = useState([])
   const [stats, setStats] = useState({
     total: 0,
     breakdown: {
@@ -40,10 +42,9 @@ function AllUsers() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState('all') // 'all', 'user', 'broker', 'supplier'
+  const [typeFilter, setTypeFilter] = useState('all') // 'all', 'buyer', 'broker', 'supplier'
   const [isActiveFilter, setIsActiveFilter] = useState('')
-  const [cityFilter, setCityFilter] = useState('')
-  const [stateFilter, setStateFilter] = useState('')
+  const [addressFilter, setAddressFilter] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(50)
   const [totalCount, setTotalCount] = useState(0)
@@ -52,6 +53,11 @@ function AllUsers() {
   const [sorting, setSorting] = useState([])
   const [columnFilters, setColumnFilters] = useState([])
   const [columnVisibility, setColumnVisibility] = useState({})
+
+  // Activation modal state
+  const [showActivateModal, setShowActivateModal] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState(null)
+  const [activationPassword, setActivationPassword] = useState('')
 
   // Fetch all data with query parameters
   useEffect(() => {
@@ -69,22 +75,15 @@ function AllUsers() {
         // Build query parameters
         const params = new URLSearchParams()
         if (typeFilter !== 'all') {
-          // Map filter values to API role values
-          const roleMap = {
-            'user': 'buyer',
-            'broker': 'broker',
-            'supplier': 'supplier'
-          }
-          params.append('role', roleMap[typeFilter] || typeFilter)
+          params.append('role', typeFilter)
         }
         if (isActiveFilter !== '') {
           params.append('isActive', isActiveFilter)
         }
-        if (cityFilter) {
-          params.append('city', cityFilter)
-        }
-        if (stateFilter) {
-          params.append('state', stateFilter)
+        if (addressFilter) {
+          // Use address filter for both city and state search
+          params.append('city', addressFilter)
+          params.append('state', addressFilter)
         }
         if (searchQuery) {
           params.append('search', searchQuery)
@@ -106,50 +105,28 @@ function AllUsers() {
             setTotalCount(allUsers.length)
           }
           
-          // Separate users by type
-          const mappedUsers = []
-          const mappedBrokers = []
-          const mappedSuppliers = []
+          // Map all users to a unified format
+          const mappedUsers = allUsers.map(user => ({
+            id: user.id || user._id,
+            name: user.name || 'N/A',
+            email: user.email || 'N/A',
+            phone: user.phone || 'N/A',
+            company: user.company || '',
+            joinDate: user.createdAt 
+              ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+              : 'N/A',
+            status: user.isActive !== false ? 'Active' : 'Inactive',
+            isActive: user.isActive !== false,
+            isUserActivated: user.isUserActivated,
+            type: user.role,
+            address: user.address 
+              ? (typeof user.address === 'string' 
+                ? user.address 
+                : `${user.address.line1 || ''} ${user.address.city || ''} ${user.address.state || ''}`.trim())
+              : 'N/A'
+          }))
 
-          allUsers.forEach(user => {
-            const baseData = {
-              id: user.id || user._id,
-              name: user.name || 'N/A',
-              email: user.email || 'N/A',
-              phone: user.phone || 'N/A',
-              company: user.company || '',
-              joinDate: user.createdAt 
-                ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                : 'N/A',
-              status: user.isActive !== false ? 'Active' : 'Inactive',
-              address: user.address 
-                ? (typeof user.address === 'string' 
-                  ? user.address 
-                  : `${user.address.line1 || ''} ${user.address.city || ''} ${user.address.state || ''}`.trim())
-                : 'N/A'
-            }
-
-            if (user.role === 'buyer') {
-              mappedUsers.push({
-                ...baseData,
-                type: 'user'
-              })
-            } else if (user.role === 'broker') {
-              mappedBrokers.push({
-                ...baseData,
-                type: 'broker'
-              })
-            } else if (user.role === 'supplier') {
-              mappedSuppliers.push({
-                ...baseData,
-                type: 'supplier'
-              })
-            }
-          })
-
-          setUsers(mappedUsers)
-          setBrokers(mappedBrokers)
-          setSuppliers(mappedSuppliers)
+          setAllUsers(mappedUsers)
         }
       } catch (err) {
         console.error('Error fetching data:', err)
@@ -160,15 +137,190 @@ function AllUsers() {
     }
 
     fetchAllData()
-  }, [typeFilter, isActiveFilter, cityFilter, stateFilter, searchQuery, page, limit])
+  }, [typeFilter, isActiveFilter, addressFilter, searchQuery, page, limit])
 
-  // Combine all data into a single array (filtering is done server-side)
-  const allData = useMemo(() => {
-    return [...users, ...brokers, ...suppliers]
-  }, [users, brokers, suppliers])
+  // Use allUsers directly since filtering is done server-side
+  const filteredData = allUsers
 
-  // Use allData directly since filtering is done server-side
-  const filteredData = allData
+  // Handle user activation - opens modal
+  const handleActivateUser = (userId) => {
+    setSelectedUserId(userId)
+    setActivationPassword('')
+    setShowActivateModal(true)
+  }
+
+  // Submit activation with password
+  const handleSubmitActivation = async (e) => {
+    e.preventDefault()
+    if (!selectedUserId || !activationPassword.trim()) {
+      showNotification('Please enter a password', 'error')
+      return
+    }
+
+    const user = allUsers.find(u => (u.id === selectedUserId) || (u._id === selectedUserId))
+    if (!user) {
+      console.error('User not found for activation. selectedUserId:', selectedUserId, 'Available users:', allUsers.map(u => ({ id: u.id, _id: u._id })))
+      showNotification('User not found', 'error')
+      return
+    }
+
+    try {
+      const result = await fetchData(`/users/${selectedUserId}/activate`, {
+        method: 'POST',
+        body: JSON.stringify({ password: activationPassword })
+      })
+      if (result.success) {
+        showNotification(`${user.name}'s account has been activated!`, 'success')
+        setShowActivateModal(false)
+        setSelectedUserId(null)
+        setActivationPassword('')
+        // Refresh data
+        window.location.reload()
+      } else {
+        showNotification(result.error || 'Failed to activate user', 'error')
+      }
+    } catch (error) {
+      console.error('Error activating user:', error)
+      showNotification('Failed to activate user', 'error')
+    }
+  }
+
+  // Handle user rejection
+  const handleRejectUser = async (userId, userObj = null) => {
+    console.log('handleRejectUser called with userId:', userId)
+    // Use provided user object or find in allUsers
+    let user = userObj
+    if (!user) {
+      user = allUsers.find(u => {
+        const uid = u.id || u._id
+        return String(uid) === String(userId)
+      })
+    }
+    if (!user || !user.id) {
+      console.log('User not found. userId:', userId, 'allUsers length:', allUsers.length, 'Available user IDs:', allUsers.map(u => ({ id: u.id, _id: u._id })))
+      showNotification('User not found. Please refresh the page and try again.', 'error')
+      return
+    }
+    console.log('Found user:', user.name, 'with id:', user.id)
+
+    try {
+      console.log('Calling confirm dialog')
+      const confirmed = await confirm({
+        title: 'Reject User Account',
+        message: `Reject ${user.name}'s account? This action cannot be undone.`,
+        confirmText: 'Reject',
+        cancelText: 'Cancel'
+      })
+      console.log('Confirmed:', confirmed)
+      if (confirmed) {
+        try {
+          const result = await fetchData(`/users/${userId}/reject`, { method: 'DELETE' })
+          if (result.success) {
+            showNotification(`${user.name}'s account has been rejected.`, 'success')
+            // Refresh data
+            window.location.reload()
+          } else {
+            showNotification(result.error || 'Failed to reject user', 'error')
+          }
+        } catch (error) {
+          console.error('Error rejecting user:', error)
+          showNotification('Failed to reject user', 'error')
+        }
+      }
+    } catch {
+      // User cancelled
+    }
+  }
+
+  // Handle user deactivation
+  const handleDeactivateUser = async (userId, userObj = null) => {
+    console.log('handleDeactivateUser called with userId:', userId)
+    // Use provided user object or find in allUsers
+    let user = userObj
+    if (!user) {
+      user = allUsers.find(u => {
+        const uid = u.id || u._id
+        return String(uid) === String(userId)
+      })
+    }
+    if (!user || !user.id) {
+      console.log('User not found for deactivation. userId:', userId, 'allUsers length:', allUsers.length, 'Available user IDs:', allUsers.map(u => ({ id: u.id, _id: u._id })))
+      showNotification('User not found. Please refresh the page and try again.', 'error')
+      return
+    }
+    console.log('Found user for deactivation:', user.name, 'with id:', user.id)
+
+    try {
+      const confirmed = await confirm({
+        title: 'Deactivate User Account',
+        message: `Deactivate ${user.name}'s account? They will lose access to the system.`,
+        confirmText: 'Deactivate',
+        cancelText: 'Cancel'
+      })
+      if (confirmed) {
+        try {
+          const result = await fetchData(`/users/${userId}/deactivate`, { method: 'POST' })
+          if (result.success) {
+            showNotification(`${user.name}'s account has been deactivated!`, 'success')
+            // Refresh data
+            window.location.reload()
+          } else {
+            showNotification(result.error || 'Failed to deactivate user', 'error')
+          }
+        } catch (error) {
+          console.error('Error deactivating user:', error)
+          showNotification('Failed to deactivate user', 'error')
+        }
+      }
+    } catch {
+      // User cancelled
+    }
+  }
+
+  // Handle user reactivation
+  const handleReactivateUser = async (userId, userObj = null) => {
+    console.log('handleReactivateUser called with userId:', userId)
+    // Use provided user object or find in allUsers
+    let user = userObj
+    if (!user) {
+      user = allUsers.find(u => {
+        const uid = u.id || u._id
+        return String(uid) === String(userId)
+      })
+    }
+    if (!user || !user.id) {
+      console.log('User not found for reactivation. userId:', userId, 'allUsers length:', allUsers.length, 'Available user IDs:', allUsers.map(u => ({ id: u.id, _id: u._id })))
+      showNotification('User not found. Please refresh the page and try again.', 'error')
+      return
+    }
+    console.log('Found user for reactivation:', user.name, 'with id:', user.id)
+
+    try {
+      const confirmed = await confirm({
+        title: 'Reactivate User Account',
+        message: `Reactivate ${user.name}'s account? They will regain access to the system.`,
+        confirmText: 'Reactivate',
+        cancelText: 'Cancel'
+      })
+      if (confirmed) {
+        try {
+          const result = await fetchData(`/users/${userId}/reactivate`, { method: 'POST' })
+          if (result.success) {
+            showNotification(`${user.name}'s account has been reactivated!`, 'success')
+            // Refresh data
+            window.location.reload()
+          } else {
+            showNotification(result.error || 'Failed to reactivate user', 'error')
+          }
+        } catch (error) {
+          console.error('Error reactivating user:', error)
+          showNotification('Failed to reactivate user', 'error')
+        }
+      }
+    } catch {
+      // User cancelled
+    }
+  }
 
   // Define columns
   const columns = useMemo(() => [
@@ -180,12 +332,12 @@ function AllUsers() {
       cell: ({ row }) => {
         const type = row.original.type
         const typeLabels = {
-          user: 'User',
+          buyer: 'Buyer',
           broker: 'Broker',
           supplier: 'Supplier'
         }
         const typeColors = {
-          user: 'type-user',
+          buyer: 'type-buyer',
           broker: 'type-broker',
           supplier: 'type-supplier'
         }
@@ -273,6 +425,123 @@ function AllUsers() {
         </span>
       ),
     },
+    {
+      id: "actions",
+      header: "Actions",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const user = row.original
+        const isActivated = user.isUserActivated
+        const isActive = user.isActive
+
+        if (!isActivated) {
+          // Not activated - show Activate and Reject options
+          return (
+            <div 
+              onClick={(e) => e.stopPropagation()}
+              style={{ display: 'flex', gap: '8px' }}
+            >
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  e.nativeEvent.stopImmediatePropagation()
+                  handleActivateUser(user.id)
+                }}
+                style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}
+                title="Activate User"
+              >
+                <CheckCircle size={14} style={{ marginRight: '4px' }} />
+                Activate
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  e.nativeEvent.stopImmediatePropagation()
+                  if (!user.id) {
+                    console.error('User ID is missing:', user)
+                    showNotification('Invalid user data. Please refresh the page.', 'error')
+                    return
+                  }
+                  await handleRejectUser(user.id, user)
+                }}
+                style={{ padding: '6px 12px', fontSize: '12px', color: '#dc2626', cursor: 'pointer' }}
+                title="Reject User"
+              >
+                <X size={14} style={{ marginRight: '4px' }} />
+                Reject
+              </button>
+            </div>
+          )
+        } else {
+          // Activated - check isActive status
+          if (isActive) {
+            // Active - show Deactivate option
+            return (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                style={{ display: 'flex', gap: '8px' }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    e.nativeEvent.stopImmediatePropagation()
+                    if (!user.id) {
+                      console.error('User ID is missing:', user)
+                      showNotification('Invalid user data. Please refresh the page.', 'error')
+                      return
+                    }
+                    await handleDeactivateUser(user.id, user)
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px', color: '#dc2626', cursor: 'pointer' }}
+                  title="Deactivate User"
+                >
+                  <PauseCircle size={14} style={{ marginRight: '4px' }} />
+                  Deactivate
+                </button>
+              </div>
+            )
+          } else {
+            // Inactive - show Reactivate option
+        return (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                style={{ display: 'flex', gap: '8px' }}
+              >
+          <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    e.nativeEvent.stopImmediatePropagation()
+                    if (!user.id) {
+                      console.error('User ID is missing:', user)
+                      showNotification('Invalid user data. Please refresh the page.', 'error')
+                      return
+                    }
+                    await handleReactivateUser(user.id, user)
+                  }}
+                  style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}
+                  title="Reactivate User"
+                >
+                  <RotateCw size={14} style={{ marginRight: '4px' }} />
+                  Reactivate
+          </button>
+              </div>
+        )
+          }
+        }
+      },
+    },
   ], [])
 
   const table = useReactTable({
@@ -307,7 +576,7 @@ function AllUsers() {
         <div className="stat-card-all">
           <div className="stat-icon-all"><Users size={24} /></div>
           <div>
-            <h3>Total Users</h3>
+            <h3>Total Buyers</h3>
             <p className="stat-value-all">{stats.breakdown?.buyers?.total || 0}</p>
             {stats.breakdown?.buyers && (
               <p className="stat-subtitle-all">
@@ -361,11 +630,11 @@ function AllUsers() {
             }}
           >
             <option value="all">All Types</option>
-            <option value="user">Users</option>
+            <option value="buyer">Buyers</option>
             <option value="broker">Brokers</option>
             <option value="supplier">Suppliers</option>
           </select>
-          {typeFilter === 'user' && (
+          {typeFilter === 'buyer' && (
             <select 
               className="filter-select"
               value={isActiveFilter}
@@ -381,21 +650,11 @@ function AllUsers() {
           )}
           <input 
             type="text" 
-            placeholder="Filter by city..."
+            placeholder="Search by address..."
             className="filter-select"
-            value={cityFilter}
+            value={addressFilter}
             onChange={(e) => {
-              setCityFilter(e.target.value)
-              setPage(1)
-            }}
-          />
-          <input 
-            type="text" 
-            placeholder="Filter by state..."
-            className="filter-select"
-            value={stateFilter}
-            onChange={(e) => {
-              setStateFilter(e.target.value)
+              setAddressFilter(e.target.value)
               setPage(1)
             }}
           />
@@ -405,56 +664,12 @@ function AllUsers() {
               setSearchQuery('')
               setTypeFilter('all')
               setIsActiveFilter('')
-              setCityFilter('')
-              setStateFilter('')
+              setAddressFilter('')
               setPage(1)
             }}
           >
             Clear Filters
           </button>
-        </div>
-        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-            Showing {filteredData.length} of {totalCount} users
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <label style={{ fontSize: '14px' }}>Items per page:</label>
-            <select 
-              className="filter-select"
-              style={{ minWidth: '80px' }}
-              value={limit}
-              onChange={(e) => {
-                setLimit(Number(e.target.value))
-                setPage(1)
-              }}
-            >
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-              <option value="200">200</option>
-            </select>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button 
-                className="btn btn-outline"
-                onClick={() => setPage(prev => Math.max(1, prev - 1))}
-                disabled={page === 1}
-                style={{ padding: '6px 12px' }}
-              >
-                Previous
-              </button>
-              <span style={{ padding: '6px 12px', display: 'flex', alignItems: 'center' }}>
-                Page {page} of {Math.ceil(totalCount / limit) || 1}
-              </span>
-              <button 
-                className="btn btn-outline"
-                onClick={() => setPage(prev => prev + 1)}
-                disabled={page >= Math.ceil(totalCount / limit)}
-                style={{ padding: '6px 12px' }}
-              >
-                Next
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -531,7 +746,7 @@ function AllUsers() {
                         colSpan={columns.length}
                         className="h-24 text-center"
                       >
-                        {allData.length === 0 
+                        {allUsers.length === 0 
                           ? 'No users found.' 
                           : 'No results found matching your search criteria'}
                       </TableCell>
@@ -546,6 +761,88 @@ function AllUsers() {
           </>
         )}
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={close}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+        title={confirmation.title}
+        message={confirmation.message}
+        confirmText={confirmation.confirmText}
+        cancelText={confirmation.cancelText}
+        variant={confirmation.variant}
+      />
+
+      {notification && (
+        <div className={`notification-toast ${notification.type}`} style={{ height: 'auto', minHeight: 'auto', maxHeight: 'none' }}>
+          {notification.message}
+        </div>
+      )}
+
+      {/* Activation Modal */}
+      {showActivateModal && (
+        <div className="modal-overlay" onClick={() => {
+          setShowActivateModal(false)
+          setSelectedUserId(null)
+          setActivationPassword('')
+        }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Activate User Account</h2>
+              <button className="close-btn" onClick={() => {
+                setShowActivateModal(false)
+                setSelectedUserId(null)
+                setActivationPassword('')
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSubmitActivation}>
+                <div className="form-group">
+                  <label>User</label>
+                  <input
+                    type="text"
+                    value={allUsers.find(u => u.id === selectedUserId)?.name || ''}
+                    disabled
+                    style={{ backgroundColor: '#f5f5f5', cursor: 'not-allowed' }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Password *</label>
+                  <input
+                    type="password"
+                    value={activationPassword}
+                    onChange={(e) => setActivationPassword(e.target.value)}
+                    placeholder="Enter password for the user"
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="modal-actions" style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowActivateModal(false)
+                      setSelectedUserId(null)
+                      setActivationPassword('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                  >
+                    Activate User
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

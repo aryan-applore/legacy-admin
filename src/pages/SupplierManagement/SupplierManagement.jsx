@@ -42,48 +42,11 @@ function SupplierManagement() {
   const [showBrokerAssignmentModal, setShowBrokerAssignmentModal] = useState(false)
   const [showPerformanceModal, setShowPerformanceModal] = useState(false)
   const [showFulfillmentModal, setShowFulfillmentModal] = useState(false)
-  const [showCategoriesModal, setShowCategoriesModal] = useState(false)
-  const [showProductModal, setShowProductModal] = useState(false)
-  const [showOrderModal, setShowOrderModal] = useState(false)
-  const [showStockUpdateModal, setShowStockUpdateModal] = useState(false)
-  const [showDeliveryUpdateModal, setShowDeliveryUpdateModal] = useState(false)
-  const [showProductsListModal, setShowProductsListModal] = useState(false)
-  const [showOrdersListModal, setShowOrdersListModal] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState(null)
-  const [selectedOrder, setSelectedOrder] = useState(null)
   const [notification, showNotification] = useNotification()
   const { fetchData } = useApiFetch()
 
   // Form Validation States
   const [formErrors, setFormErrors] = useState({})
-
-  // Categories and Material Types Management
-  const [categories, setCategories] = useState(() => {
-    const savedCategories = localStorage.getItem('legacy-admin-supplier-categories')
-    return savedCategories ? JSON.parse(savedCategories) : [
-      'Building Materials',
-      'Cement & Concrete',
-      'Steel & Metal',
-      'Electrical',
-      'Plumbing',
-      'Paint & Coating',
-      'Hardware'
-    ]
-  })
-
-  const [materialTypes, setMaterialTypes] = useState(() => {
-    const savedMaterials = localStorage.getItem('legacy-admin-material-types')
-    return savedMaterials ? JSON.parse(savedMaterials) : [
-      'TMT Bars',
-      'Cement Bags',
-      'Sand',
-      'Aggregates',
-      'Paint',
-      'Pipes',
-      'Fittings',
-      'Wires & Cables'
-    ]
-  })
 
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -116,11 +79,6 @@ function SupplierManagement() {
     return savedPerformance ? JSON.parse(savedPerformance) : {}
   })
 
-  // Products and Orders State
-  const [products, setProducts] = useState([])
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(false)
-
   // Note: Suppliers are now loaded from API, not localStorage
 
   useEffect(() => {
@@ -134,14 +92,6 @@ function SupplierManagement() {
   useEffect(() => {
     localStorage.setItem('legacy-admin-supplier-performance', JSON.stringify(supplierPerformance))
   }, [supplierPerformance])
-
-  useEffect(() => {
-    localStorage.setItem('legacy-admin-supplier-categories', JSON.stringify(categories))
-  }, [categories])
-
-  useEffect(() => {
-    localStorage.setItem('legacy-admin-material-types', JSON.stringify(materialTypes))
-  }, [materialTypes])
 
   // Listen for changes in Broker Management and update available brokers
   useEffect(() => {
@@ -168,63 +118,34 @@ function SupplierManagement() {
     }
   }, [availableBrokers])
 
-  // Helper function to fetch suppliers from unified users endpoint
+  // Helper function to fetch suppliers using role filter
   const fetchSuppliers = async () => {
-    const usersRes = await fetchData('/users')
-    if (usersRes.success && usersRes.data) {
-      // Filter suppliers from unified users response
-      const suppliersData = usersRes.data.filter(user => 
-        user.type === 'supplier' || user.role === 'supplier'
-      )
-      setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
+    const suppliersRes = await fetchData('/suppliers')
+    if (suppliersRes.success && suppliersRes.data) {
+      setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
       return true
     }
     return false
   }
 
-  // Load suppliers and orders from API
+  // Load suppliers from API
   useEffect(() => {
     const loadData = async () => {
       setLoadingSuppliers(true)
-      setLoading(true)
       try {
-        const [usersRes, ordersRes] = await Promise.all([
-          fetchData('/users'),
-          fetchData('/supplier-orders')
-        ])
-        if (usersRes.success && usersRes.data) {
-          // Filter suppliers from unified users response
-          const suppliersData = usersRes.data.filter(user => 
-            user.type === 'supplier' || user.role === 'supplier'
-          )
-          setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
-        }
-        if (ordersRes.success) {
-          setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+        const suppliersRes = await fetchData('/users?role=supplier')
+        if (suppliersRes.success && suppliersRes.data) {
+          setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : [])
         }
       } catch (error) {
         console.error('Error loading data:', error)
         showNotification('Failed to load data', 'error')
       } finally {
         setLoadingSuppliers(false)
-        setLoading(false)
       }
     }
     loadData()
   }, [])
-
-  // Fetch products only when products modal is opened
-  const fetchProducts = async () => {
-    try {
-      const productsRes = await fetchData('/products')
-      if (productsRes.success) {
-        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error)
-      showNotification('Failed to load products', 'error')
-    }
-  }
 
   // Helper to normalize supplier data (API format to UI format)
   const normalizeSupplier = (supplier) => {
@@ -607,7 +528,9 @@ function SupplierManagement() {
 
   // Calculate fulfillment stats from real orders
   const getFulfillmentStats = (supplierId) => {
-    const supplierOrders = getSupplierOrders(supplierId)
+    // Note: Orders functionality has been removed
+    // Returning empty stats structure for compatibility
+    const supplierOrders = []
     const totalOrders = supplierOrders.length
     const completedOrders = supplierOrders.filter(o => o.status === 'delivered').length
     const cancelledOrders = supplierOrders.filter(o => o.status === 'cancelled').length
@@ -674,280 +597,6 @@ function SupplierManagement() {
     }
   }
 
-  // Categories Management Handlers
-  const handleAddCategory = (e) => {
-    e.preventDefault()
-    const formData = new FormData(e.target)
-    const newCategory = formData.get('newCategory').trim()
-    
-    if (newCategory && !categories.includes(newCategory)) {
-      setCategories([...categories, newCategory])
-      showNotification(`Category "${newCategory}" added!`, 'success')
-      e.target.reset()
-    } else if (categories.includes(newCategory)) {
-      showNotification('Category already exists!', 'error')
-    }
-  }
-
-  const handleRemoveCategory = (category) => {
-    if (window.confirm(`Remove category "${category}"? Suppliers with this category will need to be updated.`)) {
-      setCategories(categories.filter(c => c !== category))
-      showNotification(`Category "${category}" removed!`, 'success')
-    }
-  }
-
-  const handleAddMaterialType = (e) => {
-    e.preventDefault()
-    const formData = new FormData(e.target)
-    const newMaterial = formData.get('newMaterial').trim()
-    
-    if (newMaterial && !materialTypes.includes(newMaterial)) {
-      setMaterialTypes([...materialTypes, newMaterial])
-      showNotification(`Material type "${newMaterial}" added!`, 'success')
-      e.target.reset()
-    } else if (materialTypes.includes(newMaterial)) {
-      showNotification('Material type already exists!', 'error')
-    }
-  }
-
-  const handleRemoveMaterialType = (material) => {
-    if (window.confirm(`Remove material type "${material}"?`)) {
-      setMaterialTypes(materialTypes.filter(m => m !== material))
-      showNotification(`Material type "${material}" removed!`, 'success')
-    }
-  }
-
-  // Product Handlers
-  const handleAddProduct = () => {
-    setSelectedProduct(null)
-    setShowProductModal(true)
-  }
-
-  const handleEditProduct = (product) => {
-    setSelectedProduct(product)
-    setShowProductModal(true)
-  }
-
-  const handleSaveProduct = async (e) => {
-    e.preventDefault()
-    const formData = new FormData(e.target)
-    const productData = {
-      sku: formData.get('sku'),
-      name: formData.get('name'),
-      description: formData.get('description'),
-      supplierId: formData.get('supplierId'),
-      category: formData.get('category'),
-      unit: formData.get('unit') || 'pieces',
-      currentStock: parseInt(formData.get('currentStock')) || 0,
-      lowStockThreshold: parseInt(formData.get('lowStockThreshold')) || 0
-    }
-
-    const endpoint = selectedProduct ? `/products/${selectedProduct._id || selectedProduct.id}` : '/products'
-    const method = selectedProduct ? 'PUT' : 'POST'
-    
-    const result = await fetchData(endpoint, {
-      method,
-      body: JSON.stringify(productData)
-    })
-    
-    if (result.success) {
-      showNotification(selectedProduct ? 'Product updated successfully!' : 'Product created successfully!', 'success')
-      const productsRes = await fetchData('/products')
-      if (productsRes.success) {
-        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
-      }
-      setShowProductModal(false)
-      setSelectedProduct(null)
-    } else {
-      showNotification(result.error || 'Failed to save product', 'error')
-    }
-  }
-
-  const handleDeleteProduct = async (productId) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
-      const result = await fetchData(`/products/${productId}`, { method: 'DELETE' })
-      if (result.success) {
-        showNotification('Product deleted successfully!', 'success')
-        const productsRes = await fetchData('/products')
-        if (productsRes.success) {
-          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
-        }
-      } else {
-        showNotification(result.error || 'Failed to delete product', 'error')
-      }
-    }
-  }
-
-  const handleUpdateStock = (product) => {
-    setSelectedProduct(product)
-    setShowStockUpdateModal(true)
-  }
-
-  const handleSaveStockUpdate = async (e) => {
-    e.preventDefault()
-    const formData = new FormData(e.target)
-    const quantity = parseInt(formData.get('quantity'))
-    const operation = formData.get('operation')
-
-    const result = await fetchData(`/products/${selectedProduct._id || selectedProduct.id}/stock`, {
-      method: 'PUT',
-      body: JSON.stringify({ quantity, operation })
-    })
-    
-    if (result.success) {
-      showNotification('Stock updated successfully!', 'success')
-      const productsRes = await fetchData('/products')
-      if (productsRes.success) {
-        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
-      }
-      setShowStockUpdateModal(false)
-      setSelectedProduct(null)
-    } else {
-      showNotification(result.error || 'Failed to update stock', 'error')
-    }
-  }
-
-  // Order Handlers
-  const handleAddOrder = () => {
-    setSelectedOrder(null)
-    setShowOrderModal(true)
-  }
-
-  const handleEditOrder = (order) => {
-    setSelectedOrder(order)
-    setShowOrderModal(true)
-  }
-
-  const handleSaveOrder = async (e) => {
-    e.preventDefault()
-    const formData = new FormData(e.target)
-    const items = JSON.parse(formData.get('items') || '[]')
-    
-    const orderData = {
-      supplierId: formData.get('supplierId'),
-      status: formData.get('status') || 'pending',
-      expectedDelivery: formData.get('expectedDelivery') || undefined,
-      items: items,
-      paymentStatus: formData.get('paymentStatus') || 'pending',
-      notes: formData.get('notes')
-    }
-
-    const endpoint = selectedOrder ? `/supplier-orders/${selectedOrder._id || selectedOrder.id}` : '/supplier-orders'
-    const method = selectedOrder ? 'PUT' : 'POST'
-    
-    const result = await fetchData(endpoint, {
-      method,
-      body: JSON.stringify(orderData)
-    })
-    
-    if (result.success) {
-      showNotification(selectedOrder ? 'Order updated successfully!' : 'Order created successfully!', 'success')
-      const ordersRes = await fetchData('/supplier-orders')
-      if (ordersRes.success) {
-        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
-      }
-      setShowOrderModal(false)
-      setSelectedOrder(null)
-    } else {
-      showNotification(result.error || 'Failed to save order', 'error')
-    }
-  }
-
-  const handleDeleteOrder = async (orderId) => {
-    if (window.confirm('Are you sure you want to delete this order?')) {
-      const result = await fetchData(`/supplier-orders/${orderId}`, { method: 'DELETE' })
-      if (result.success) {
-        showNotification('Order deleted successfully!', 'success')
-        const ordersRes = await fetchData('/supplier-orders')
-        if (ordersRes.success) {
-          setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
-        }
-      } else {
-        showNotification(result.error || 'Failed to delete order', 'error')
-      }
-    }
-  }
-
-  const handleUpdateOrderStatus = async (orderId, status, cancellationReason) => {
-    const result = await fetchData(`/supplier-orders/${orderId}/status`, {
-      method: 'PUT',
-      body: JSON.stringify({ status, cancellationReason })
-    })
-    
-    if (result.success) {
-      showNotification('Order status updated successfully!', 'success')
-      const ordersRes = await fetchData('/supplier-orders')
-      if (ordersRes.success) {
-        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
-      }
-      const productsRes = await fetchData('/products')
-      if (productsRes.success) {
-        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
-      }
-    } else {
-      showNotification(result.error || 'Failed to update order status', 'error')
-    }
-  }
-
-  const handleUpdateDelivery = (order) => {
-    setSelectedOrder(order)
-    setShowDeliveryUpdateModal(true)
-  }
-
-  const handleSaveDeliveryUpdate = async (e) => {
-    e.preventDefault()
-    const formData = new FormData(e.target)
-    const receivedQuantities = {}
-    
-    // Collect received quantities for each item
-    const itemInputs = formData.getAll('receivedQuantity')
-    const itemIds = formData.getAll('itemId')
-    itemIds.forEach((id, index) => {
-      receivedQuantities[id] = parseInt(itemInputs[index]) || 0
-    })
-
-    const result = await fetchData(`/supplier-orders/${selectedOrder._id || selectedOrder.id}/delivery`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        actualDelivery: formData.get('actualDelivery') || undefined,
-        receivedQuantities
-      })
-    })
-    
-    if (result.success) {
-      showNotification('Delivery updated successfully!', 'success')
-      const ordersRes = await fetchData('/supplier-orders')
-      if (ordersRes.success) {
-        setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
-      }
-      const productsRes = await fetchData('/products')
-      if (productsRes.success) {
-        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
-      }
-      setShowDeliveryUpdateModal(false)
-      setSelectedOrder(null)
-    } else {
-      showNotification(result.error || 'Failed to update delivery', 'error')
-    }
-  }
-
-  const getSupplierProducts = (supplierId) => {
-    if (!supplierId) return []
-    const idStr = supplierId.toString()
-    return products.filter(p => {
-      const pid = p.supplierId?._id?.toString() || p.supplierId?.toString() || p.supplierId
-      return pid === idStr || pid === supplierId
-    })
-  }
-
-  const getSupplierOrders = (supplierId) => {
-    if (!supplierId) return []
-    const idStr = supplierId.toString()
-    return orders.filter(o => {
-      const oid = o.supplierId?._id?.toString() || o.supplierId?.toString() || o.supplierId
-      return oid === idStr || oid === supplierId
-    })
-  }
 
   // Define columns
   const columns = useMemo(() => [
@@ -1066,18 +715,6 @@ function SupplierManagement() {
           <p className="page-subtitle">Manage supplier accounts and information</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <button className="btn btn-outline" onClick={() => {
-            fetchProducts()
-            setShowProductsListModal(true)
-          }}>
-            📦 Products
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowOrdersListModal(true)}>
-            🛒 Orders ({orders.length})
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowCategoriesModal(true)}>
-            🏷️ Manage Categories
-          </button>
           <button className="btn btn-primary" onClick={() => { setSelectedSupplier(null); setShowSupplierModal(true); }}>
             + Create New Supplier
           </button>
@@ -1743,429 +1380,6 @@ function SupplierManagement() {
         </div>
       )}
 
-      {/* Categories Management Modal */}
-      {showCategoriesModal && (
-        <div className="modal-overlay" onClick={() => setShowCategoriesModal(false)}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Manage Categories & Material Types</h2>
-              <button className="close-btn" onClick={() => setShowCategoriesModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="documents-summary">
-                <p className="summary-text">
-                  Manage supplier categories and material types for the entire system
-                </p>
-              </div>
-
-              {/* Categories Section */}
-              <div className="assignment-section">
-                <h3 className="section-title">Supplier Categories ({categories.length})</h3>
-                
-                <form onSubmit={handleAddCategory} style={{ marginBottom: '20px' }}>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Add New Category</label>
-                      <input 
-                        type="text" 
-                        name="newCategory"
-                        placeholder="e.g., Wood & Timber"
-                        required
-                      />
-                    </div>
-                    <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', marginTop: '28px' }}>
-                      Add Category
-                    </button>
-                  </div>
-                </form>
-
-                <div className="documents-list">
-                  {categories.map((category, index) => (
-                    <div key={index} className="document-item">
-                      <div className="document-icon">🏷️</div>
-                      <div className="document-info">
-                        <div className="document-name">{category}</div>
-                        <div className="document-meta">Category #{index + 1}</div>
-                      </div>
-                      <button 
-                        className="action-btn" 
-                        title="Remove Category"
-                        onClick={() => handleRemoveCategory(category)}
-                        style={{ padding: '8px 12px', background: 'var(--error)', color: 'white', borderRadius: '6px' }}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Material Types Section */}
-              <div className="assignment-section" style={{ marginTop: '30px' }}>
-                <h3 className="section-title">Material Types ({materialTypes.length})</h3>
-                
-                <form onSubmit={handleAddMaterialType} style={{ marginBottom: '20px' }}>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Add New Material Type</label>
-                      <input 
-                        type="text" 
-                        name="newMaterial"
-                        placeholder="e.g., Ceramic Tiles"
-                        required
-                      />
-                    </div>
-                    <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', marginTop: '28px' }}>
-                      Add Material
-                    </button>
-                  </div>
-                </form>
-
-                <div className="documents-list">
-                  {materialTypes.map((material, index) => (
-                    <div key={index} className="document-item">
-                      <div className="document-icon">📦</div>
-                      <div className="document-info">
-                        <div className="document-name">{material}</div>
-                        <div className="document-meta">Material Type #{index + 1}</div>
-                      </div>
-                      <button 
-                        className="action-btn" 
-                        title="Remove Material Type"
-                        onClick={() => handleRemoveMaterialType(material)}
-                        style={{ padding: '8px 12px', background: 'var(--error)', color: 'white', borderRadius: '6px' }}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button className="btn btn-primary" onClick={() => setShowCategoriesModal(false)}>Done</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Products List Modal */}
-      {showProductsListModal && (
-        <div className="modal-overlay" onClick={() => setShowProductsListModal(false)}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Product Inventory ({products.length})</h2>
-              <button className="close-btn" onClick={() => setShowProductsListModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div style={{ marginBottom: '20px' }}>
-                <button className="btn btn-primary" onClick={handleAddProduct}>+ Add Product</button>
-              </div>
-              <div className="documents-list">
-                {products.length > 0 ? (
-                  products.map((product) => (
-                    <div key={product._id || product.id} className="document-item">
-                      <div className="document-icon">📦</div>
-                      <div className="document-info" style={{ flex: 1 }}>
-                        <div className="document-name">{product.name} ({product.sku})</div>
-                        <div className="document-meta">
-                          Stock: {product.currentStock} {product.unit} | 
-                          Low Threshold: {product.lowStockThreshold} | 
-                          Category: {product.category || 'N/A'}
-                          {product.currentStock <= product.lowStockThreshold && <span style={{ color: 'var(--error)', marginLeft: '10px' }}>⚠️ Low Stock</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-outline" onClick={() => handleUpdateStock(product)}>Update Stock</button>
-                        <button className="btn btn-outline" onClick={() => handleEditProduct(product)}>Edit</button>
-                        <button className="btn btn-outline" onClick={() => handleDeleteProduct(product._id || product.id)}>Delete</button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="no-documents">No products yet. Click "Add Product" to create one.</p>
-                )}
-              </div>
-              <div className="modal-actions">
-                <button className="btn btn-primary" onClick={() => setShowProductsListModal(false)}>Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Orders List Modal */}
-      {showOrdersListModal && (
-        <div className="modal-overlay" onClick={() => setShowOrdersListModal(false)}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Purchase Orders ({orders.length})</h2>
-              <button className="close-btn" onClick={() => setShowOrdersListModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div style={{ marginBottom: '20px' }}>
-                <button className="btn btn-primary" onClick={handleAddOrder}>+ Create Order</button>
-              </div>
-              <div className="documents-list">
-                {orders.length > 0 ? (
-                  orders.map((order) => (
-                    <div key={order._id || order.id} className="document-item">
-                      <div className="document-icon">🛒</div>
-                      <div className="document-info" style={{ flex: 1 }}>
-                        <div className="document-name">{order.orderNumber}</div>
-                        <div className="document-meta">
-                          Supplier: {order.supplierId?.name || order.supplierId?.company || 'N/A'} | 
-                          Status: {order.status} | 
-                          Total: ₹{order.totalAmount?.toLocaleString() || '0'} | 
-                          Items: {order.items?.length || 0}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-outline" onClick={() => handleUpdateDelivery(order)}>Update Delivery</button>
-                        <button className="btn btn-outline" onClick={() => handleEditOrder(order)}>Edit</button>
-                        <button className="btn btn-outline" onClick={() => handleDeleteOrder(order._id || order.id)}>Delete</button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="no-documents">No orders yet. Click "Create Order" to create one.</p>
-                )}
-              </div>
-              <div className="modal-actions">
-                <button className="btn btn-primary" onClick={() => setShowOrdersListModal(false)}>Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Product Add/Edit Modal */}
-      {showProductModal && (
-        <div className="modal-overlay" onClick={() => { setShowProductModal(false); setSelectedProduct(null); }}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{selectedProduct ? 'Edit Product' : 'Add New Product'}</h2>
-              <button className="close-btn" onClick={() => { setShowProductModal(false); setSelectedProduct(null); }}>×</button>
-            </div>
-            <div className="modal-body">
-              <form onSubmit={handleSaveProduct}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>SKU *</label>
-                    <input type="text" name="sku" defaultValue={selectedProduct?.sku} required />
-                  </div>
-                  <div className="form-group">
-                    <label>Name *</label>
-                    <input type="text" name="name" defaultValue={selectedProduct?.name} required />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Description</label>
-                  <textarea name="description" rows="3" defaultValue={selectedProduct?.description}></textarea>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Supplier *</label>
-                    <select name="supplierId" required defaultValue={selectedProduct?.supplierId?._id || selectedProduct?.supplierId}>
-                      <option value="">Select Supplier</option>
-                      {suppliers.map((s) => (
-                        <option key={s.id || s._id} value={s.id || s._id}>{s.companyName || s.company}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Category</label>
-                    <select name="category" defaultValue={selectedProduct?.category}>
-                      <option value="">Select Category</option>
-                      {categories.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Unit</label>
-                    <input type="text" name="unit" defaultValue={selectedProduct?.unit || 'pieces'} />
-                  </div>
-                  <div className="form-group">
-                    <label>Current Stock</label>
-                    <input type="number" name="currentStock" min="0" defaultValue={selectedProduct?.currentStock || 0} />
-                  </div>
-                  <div className="form-group">
-                    <label>Low Stock Threshold</label>
-                    <input type="number" name="lowStockThreshold" min="0" defaultValue={selectedProduct?.lowStockThreshold || 0} />
-                  </div>
-                </div>
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowProductModal(false); setSelectedProduct(null); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Save Product</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Stock Update Modal */}
-      {showStockUpdateModal && selectedProduct && (
-        <div className="modal-overlay" onClick={() => { setShowStockUpdateModal(false); setSelectedProduct(null); }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Update Stock - {selectedProduct.name}</h2>
-              <button className="close-btn" onClick={() => { setShowStockUpdateModal(false); setSelectedProduct(null); }}>×</button>
-            </div>
-            <div className="modal-body">
-              <form onSubmit={handleSaveStockUpdate}>
-                <div className="form-group">
-                  <label>Current Stock: {selectedProduct.currentStock} {selectedProduct.unit}</label>
-                </div>
-                <div className="form-group">
-                  <label>Operation *</label>
-                  <select name="operation" required>
-                    <option value="set">Set to</option>
-                    <option value="add">Add</option>
-                    <option value="subtract">Subtract</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Quantity *</label>
-                  <input type="number" name="quantity" min="0" required />
-                </div>
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowStockUpdateModal(false); setSelectedProduct(null); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Update Stock</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Order Add/Edit Modal */}
-      {showOrderModal && (
-        <div className="modal-overlay" onClick={() => { setShowOrderModal(false); setSelectedOrder(null); }}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{selectedOrder ? 'Edit Order' : 'Create Purchase Order'}</h2>
-              <button className="close-btn" onClick={() => { setShowOrderModal(false); setSelectedOrder(null); }}>×</button>
-            </div>
-            <div className="modal-body">
-              <form onSubmit={handleSaveOrder}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Supplier *</label>
-                    <select name="supplierId" required defaultValue={selectedOrder?.supplierId?._id || selectedOrder?.supplierId}>
-                      <option value="">Select Supplier</option>
-                      {suppliers.map((s) => (
-                        <option key={s.id || s._id} value={s.id || s._id}>{s.companyName || s.company}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Status</label>
-                    <select name="status" defaultValue={selectedOrder?.status || 'pending'}>
-                      <option value="pending">Pending</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="in_transit">In Transit</option>
-                      <option value="delivered">Delivered</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Expected Delivery</label>
-                    <input type="date" name="expectedDelivery" defaultValue={selectedOrder?.expectedDelivery ? new Date(selectedOrder.expectedDelivery).toISOString().split('T')[0] : ''} />
-                  </div>
-                  <div className="form-group">
-                    <label>Payment Status</label>
-                    <select name="paymentStatus" defaultValue={selectedOrder?.paymentStatus || 'pending'}>
-                      <option value="pending">Pending</option>
-                      <option value="partial">Partial</option>
-                      <option value="paid">Paid</option>
-                      <option value="overdue">Overdue</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Items (JSON Array) *</label>
-                  <textarea 
-                    name="items" 
-                    rows="10" 
-                    required
-                    defaultValue={selectedOrder?.items ? JSON.stringify(selectedOrder.items.map(item => ({
-                      productId: item.productId?._id || item.productId,
-                      quantity: item.quantity,
-                      unitPrice: item.unitPrice,
-                      receivedQuantity: item.receivedQuantity || 0,
-                      notes: item.notes || ''
-                    })), null, 2) : '[]'}
-                    placeholder='[{"productId": "product_id_here", "quantity": 100, "unitPrice": 25.50, "receivedQuantity": 0, "notes": ""}]'
-                  ></textarea>
-                  <small>Format: Array of objects with productId, quantity, unitPrice, receivedQuantity (optional), notes (optional)</small>
-                </div>
-                <div className="form-group">
-                  <label>Notes</label>
-                  <textarea name="notes" rows="3" defaultValue={selectedOrder?.notes}></textarea>
-                </div>
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowOrderModal(false); setSelectedOrder(null); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Save Order</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delivery Update Modal */}
-      {showDeliveryUpdateModal && selectedOrder && (
-        <div className="modal-overlay" onClick={() => { setShowDeliveryUpdateModal(false); setSelectedOrder(null); }}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Update Delivery - {selectedOrder.orderNumber}</h2>
-              <button className="close-btn" onClick={() => { setShowDeliveryUpdateModal(false); setSelectedOrder(null); }}>×</button>
-            </div>
-            <div className="modal-body">
-              <form onSubmit={handleSaveDeliveryUpdate}>
-                <div className="form-group">
-                  <label>Actual Delivery Date</label>
-                  <input 
-                    type="date" 
-                    name="actualDelivery" 
-                    defaultValue={selectedOrder?.actualDelivery ? new Date(selectedOrder.actualDelivery).toISOString().split('T')[0] : ''} 
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Received Quantities</label>
-                  {selectedOrder.items?.map((item, index) => (
-                    <div key={index} style={{ marginBottom: '15px', padding: '10px', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-                      <input type="hidden" name="itemId" value={item._id || item.id} />
-                      <div style={{ marginBottom: '8px' }}>
-                        <strong>{item.productId?.name || 'Product'}</strong> - Ordered: {item.quantity}
-                      </div>
-                      <input 
-                        type="number" 
-                        name="receivedQuantity" 
-                        min="0" 
-                        max={item.quantity}
-                        defaultValue={item.receivedQuantity || 0}
-                        placeholder="Received quantity"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowDeliveryUpdateModal(false); setSelectedOrder(null); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Update Delivery</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Notification Toast */}
       {notification && (

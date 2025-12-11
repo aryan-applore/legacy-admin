@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useApiFetch, useNotification } from '../../lib/apiHelpers'
+import { useApiFetch, useNotification, API_BASE_URL } from '../../lib/apiHelpers'
 import './PropertyManagement.css'
 import { 
   Home, 
@@ -51,6 +51,27 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { StatusBadge } from './components/StatusBadge'
+import { ProgressCircle } from './components/ProgressCircle'
+import { PersonDetailCard } from './components/DetailSection'
+import { getInstalmentsProgress, formatDate, formatCurrency } from './utils'
+
+// Inline person cell renderer to avoid reference errors
+const PersonCell = ({ person, type }) => {
+  if (!person) return <span className="text-muted">Unassigned</span>
+  const title = type === 'buyer' ? 'Buyer' : 'Broker'
+  return (
+    <div className="person-cell">
+      <div className="person-name">{person.name || `${title} N/A`}</div>
+      {(person.email || person.phone) && (
+        <div className="person-meta">
+          {person.email && <span>{person.email}</span>}
+          {person.phone && <span style={{ marginLeft: person.email ? 6 : 0 }}>{person.phone}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 
 
@@ -107,6 +128,46 @@ function  PropertyManagement() {
   // Helper function to get status (handle both old and new format)
   const getStatus = (property) => {
     return property.status?.toLowerCase() || 'active'
+  }
+
+  // Helper function to format location into a display string
+  const formatLocation = (location) => {
+    if (!location) return 'N/A'
+    const parts = [
+      location.address || location.line1,
+      location.city,
+      location.state,
+      location.pincode
+    ].filter(Boolean)
+    return parts.join(', ') || 'N/A'
+  }
+
+  // Helper function to get person (buyer or broker) from property
+  const getPerson = (property, type) => {
+    if (type === 'buyer') {
+      // Try direct buyer object
+      if (property.buyer) return property.buyer
+      // Try buyers array (take first)
+      if (property.buyers && Array.isArray(property.buyers) && property.buyers.length > 0) {
+        return property.buyers[0]
+      }
+      // Try buyerId and lookup from availableBuyers
+      if (property.buyerId) {
+        return availableBuyers.find(b => (b.id || b._id) === property.buyerId) || null
+      }
+    } else if (type === 'broker') {
+      // Try direct broker object
+      if (property.broker) return property.broker
+      // Try brokers array (take first)
+      if (property.brokers && Array.isArray(property.brokers) && property.brokers.length > 0) {
+        return property.brokers[0]
+      }
+      // Try brokerId and lookup from availableBrokers
+      if (property.brokerId) {
+        return availableBrokers.find(b => (b.id || b._id) === property.brokerId) || null
+      }
+    }
+    return null
   }
 
   // Helper function to get progress data (handle both old and new format)
@@ -176,13 +237,10 @@ function  PropertyManagement() {
   useEffect(() => {
     const fetchBuyersAndBrokers = async () => {
       try {
-        const [buyersRes, brokersRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/buyers`),
-          fetch(`${API_BASE_URL}/brokers`)
+        const [buyersData, brokersData] = await Promise.all([
+          fetchData('/users?role=buyer'),
+          fetchData('/users?role=broker')
         ])
-        
-        const buyersData = await buyersRes.json()
-        const brokersData = await brokersRes.json()
         
         if (buyersData.success && buyersData.data) {
           setAvailableBuyers(buyersData.data || [])
@@ -197,6 +255,7 @@ function  PropertyManagement() {
     }
 
     fetchBuyersAndBrokers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Filtered and Searched Properties
@@ -236,7 +295,7 @@ function  PropertyManagement() {
 
       return matchesSearch && matchesProject && matchesStatus
     })
-  }, [properties, searchQuery, filterProject, filterStatus, projects])
+  }, [properties, searchQuery, filterProject, filterStatus, projects, availableBuyers, availableBrokers])
 
   // Table state
   const [sorting, setSorting] = useState([])
@@ -299,24 +358,16 @@ function  PropertyManagement() {
   const fetchPropertyDocuments = async (propertyId) => {
     try {
       setLoadingDocuments(true)
-      const propertyResponse = await fetch(`${API_BASE_URL}/admin/properties/${propertyId}`)
-      const propertyData = await propertyResponse.json()
+      const propertyData = await fetchData(`/properties/${propertyId}`)
       
       if (propertyData.success && propertyData.data) {
         const property = propertyData.data
         const buyerId = property.buyerId || property.buyer?.id || property.buyer?._id
         
         if (buyerId) {
-          const token = localStorage.getItem('adminToken')
-          const documentsResponse = await fetch(
-            `${API_BASE_URL}/documents?buyerId=${buyerId}&propertyId=${propertyId}&all=true`,
-            {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
-            }
+          const documentsData = await fetchData(
+            `/documents?buyerId=${buyerId}&propertyId=${propertyId}&all=true`
           )
-          const documentsData = await documentsResponse.json()
           
           if (documentsData.success && documentsData.data) {
             const docs = documentsData.data.documents || documentsData.data || []
@@ -665,8 +716,7 @@ function  PropertyManagement() {
     if (!selectedProperty || !file) return
 
     try {
-      const propertyResponse = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}`)
-      const propertyData = await propertyResponse.json()
+      const propertyData = await fetchData(`/properties/${selectedProperty.id}`)
       
       if (!propertyData.success || !propertyData.data) {
         showNotification('Failed to get property information', 'error')
@@ -691,16 +741,11 @@ function  PropertyManagement() {
         formData.append('description', description)
       }
 
-      const token = localStorage.getItem('adminToken')
-      const response = await fetch(`${API_BASE_URL}/documents`, {
+      const data = await fetchData('/documents', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
         body: formData
       })
 
-      const data = await response.json()
       if (data.success) {
         showNotification('Document uploaded successfully!', 'success')
         await fetchPropertyDocuments(selectedProperty.id)
@@ -717,15 +762,10 @@ function  PropertyManagement() {
     if (!selectedProperty || !documentId) return
 
     try {
-      const token = localStorage.getItem('adminToken')
-      const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const data = await fetchData(`/documents/${documentId}`, {
+        method: 'DELETE'
       })
 
-      const data = await response.json()
       if (data.success) {
         showNotification('Document deleted successfully!', 'success')
         await fetchPropertyDocuments(selectedProperty.id)
@@ -759,18 +799,14 @@ function  PropertyManagement() {
 
     try {
       setLoadingAssign(true)
-      const response = await fetch(`${API_BASE_URL}/admin/properties/${selectedProperty.id}`, {
+      const data = await fetchData(`/properties/${selectedProperty.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           buyerId: assignData.buyerId,
           brokerId: assignData.brokerId || null
         })
       })
 
-      const data = await response.json()
       if (data.success) {
         showNotification('Buyer and broker assigned successfully!', 'success')
         setShowAssignModal(false)
@@ -1329,12 +1365,12 @@ function  PropertyManagement() {
                     <Home size={24} />
                   </div>
                   <div>
-                    <h2>Property Details</h2>
+              <h2>Property Details</h2>
                     <p className="property-subtitle">Flat {selectedProperty.flatNo}</p>
                   </div>
                 </div>
-                <button className="close-btn" onClick={() => setShowDetailsModal(false)}>×</button>
-              </div>
+              <button className="close-btn" onClick={() => setShowDetailsModal(false)}>×</button>
+            </div>
             </div>
             <div className="modal-body property-details-body">
               {/* Property Overview Card */}
@@ -1351,23 +1387,23 @@ function  PropertyManagement() {
                         <span>Property ID</span>
                       </div>
                       <div className="property-overview-value property-id-value">
-                        {selectedProperty.id}
-                      </div>
-                    </div>
+                    {selectedProperty.id}
+                </div>
+                </div>
                     <div className="property-overview-item">
                       <div className="property-overview-label">
                         <Home size={14} />
                         <span>Flat/Unit Number</span>
-                      </div>
+                </div>
                       <div className="property-overview-value">
                         {selectedProperty.flatNo}
-                      </div>
-                    </div>
+                </div>
+                </div>
                     <div className="property-overview-item">
                       <div className="property-overview-label">
                         <Building2 size={14} />
                         <span>Building Name</span>
-                      </div>
+                </div>
                       <div className="property-overview-value">
                         {selectedProperty.buildingName || 'N/A'}
                       </div>
@@ -1420,28 +1456,28 @@ function  PropertyManagement() {
                       <div className="progress-item-content">
                         <div className="progress-display">
                           <span className="progress-percentage">
-                            {getProgress(selectedProperty).percentage || 0}%
-                          </span>
+                      {getProgress(selectedProperty).percentage || 0}%
+                    </span>
                           <div className="progress-bar-container">
                             <div 
                               className="progress-bar-fill"
-                              style={{ 
+                        style={{ 
                                 width: `${Math.min(getProgress(selectedProperty).percentage || 0, 100)}%`
-                              }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
+                        }}
+                      ></div>
                     </div>
+                  </div>
+                </div>
+                </div>
                     <div className="progress-item">
                       <div className="progress-item-label">
                         <Layers size={14} />
                         <span>Current Stage</span>
-                      </div>
+                  </div>
                       <div className="progress-item-value">
                         {getDisplayStage(getProgress(selectedProperty).stage)}
-                      </div>
-                    </div>
+                  </div>
+                  </div>
                     <div className="progress-item">
                       <div className="progress-item-label">
                         <Calendar size={14} />
@@ -1535,16 +1571,16 @@ function  PropertyManagement() {
                         <div className="pricing-value pricing-value-success">
                           {formatCurrency(selectedProperty.pricing.paidAmount)}
                         </div>
-                      </div>
-                    )}
+                  </div>
+                )}
                     {selectedProperty.pricing?.pendingAmount !== undefined && (
                       <div className="pricing-item">
                         <div className="pricing-label">Pending Amount</div>
                         <div className="pricing-value pricing-value-warning">
                           {formatCurrency(selectedProperty.pricing.pendingAmount)}
                         </div>
-                      </div>
-                    )}
+                  </div>
+                )}
                   </div>
                 </div>
               </div>
@@ -1555,20 +1591,20 @@ function  PropertyManagement() {
                   <div className="property-detail-card-header">
                     <DollarSign size={18} />
                     <h3>Instalments Summary</h3>
-                  </div>
+                        </div>
                   <div className="property-detail-card-content">
                     <div className="instalments-summary-grid">
                       <div className="instalments-summary-item">
                         <div className="instalments-summary-label">Total Instalments</div>
                         <div className="instalments-summary-value">{selectedProperty.instalments.length}</div>
-                      </div>
+                        </div>
                       <div className="instalments-summary-item">
                         <div className="instalments-summary-label">Total Amount</div>
                         <div className="instalments-summary-value instalments-summary-value-large">
                           {formatCurrency(
                             selectedProperty.instalments.reduce((sum, inst) => sum + (inst.amount || 0), 0)
                           )}
-                        </div>
+                          </div>
                       </div>
                       <div className="instalments-summary-item instalments-summary-item-success">
                         <div className="instalments-summary-label">Paid</div>
@@ -1577,9 +1613,9 @@ function  PropertyManagement() {
                             selectedProperty.instalments
                               .filter(inst => inst.status === 'paid')
                               .reduce((sum, inst) => sum + (inst.amount || 0), 0)
-                          )}
-                        </div>
+                        )}
                       </div>
+                    </div>
                       <div className="instalments-summary-item instalments-summary-item-warning">
                         <div className="instalments-summary-label">Pending</div>
                         <div className="instalments-summary-value instalments-summary-value-warning">
@@ -1602,20 +1638,20 @@ function  PropertyManagement() {
                   <div className="property-detail-card-header">
                     <User size={18} />
                     <h3>Assigned Buyer</h3>
-                  </div>
+                        </div>
                   <div className="property-detail-card-content">
                     <PersonDetailCard person={getPerson(selectedProperty, 'buyer')} type="buyer" />
-                  </div>
-                </div>
+                        </div>
+                      </div>
 
                 <div className="property-detail-card">
                   <div className="property-detail-card-header">
                     <Briefcase size={18} />
                     <h3>Assigned Broker</h3>
-                  </div>
+                    </div>
                   <div className="property-detail-card-content">
                     <PersonDetailCard person={getPerson(selectedProperty, 'broker')} type="broker" />
-                  </div>
+                </div>
                 </div>
               </div>
 
@@ -1626,21 +1662,21 @@ function  PropertyManagement() {
                   <h3>Project Gallery</h3>
                 </div>
                 <div className="property-detail-card-content">
-                  {loadingGallery ? (
+                {loadingGallery ? (
                     <div className="gallery-loading">
                       <p>Loading gallery...</p>
                     </div>
-                  ) : galleryImages.length > 0 ? (
+                ) : galleryImages.length > 0 ? (
                     <div className="gallery-grid-modern">
-                      {galleryImages.map((img) => (
+                    {galleryImages.map((img) => (
                         <div key={img.id} className="gallery-item-modern">
-                          <img 
-                            src={img.url} 
-                            alt={img.caption || 'Gallery image'} 
+                        <img 
+                          src={img.url} 
+                          alt={img.caption || 'Gallery image'} 
                             className="gallery-image"
-                            onClick={() => window.open(img.url, '_blank')}
-                          />
-                          {img.caption && (
+                          onClick={() => window.open(img.url, '_blank')}
+                        />
+                        {img.caption && (
                             <p className="gallery-caption">{img.caption}</p>
                           )}
                         </div>
@@ -1702,16 +1738,16 @@ function  PropertyManagement() {
                               <ExternalLink size={14} />
                               View
                             </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                     <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
                       <FileText size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
                       <p>No documents uploaded yet</p>
                     </div>
-                  )}
+                )}
                 </div>
               </div>
 
