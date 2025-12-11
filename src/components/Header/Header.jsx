@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import './Header.css'
-import { Menu, Search, Bell, LogOut } from 'lucide-react'
+import { Menu, Search, LogOut } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useConfirmation } from '../../hooks/useConfirmation'
 import ConfirmationModal from '../ConfirmationModal/ConfirmationModal'
@@ -43,12 +43,18 @@ function Header({ onMenuClick }) {
             <Search size={18} />
           </button>
           
-          <button className="notification-btn">
-            <Bell size={18} />
-            <span className="notification-badge">3</span>
-          </button>
-          
-          <div className="user-profile">
+          <div
+            className="user-profile"
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate('/profile')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                navigate('/profile')
+              }
+            }}
+          >
             <div className="user-avatar">{userInitial}</div>
             <div className="user-info">
               <span className="user-name">{userName}</span>

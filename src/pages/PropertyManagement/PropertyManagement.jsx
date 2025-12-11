@@ -18,9 +18,7 @@ import {
   User,
   Briefcase,
   Image as ImageIcon,
-  Hash,
-  FileText,
-  ExternalLink
+  Hash
 } from 'lucide-react'
 import PropertyForm from '../../components/PropertyForm/PropertyForm'
 import {
@@ -418,9 +416,6 @@ function  PropertyManagement() {
       setGalleryImages([])
     }
     
-    // Fetch documents
-    await fetchPropertyDocuments(property.id)
-    
     setShowEditPropertyModal(true)
   }
 
@@ -589,7 +584,7 @@ function  PropertyManagement() {
   }
 
   const handleDeleteProperty = async (propertyId) => {
-    if (!window.confirm('Are you sure you want to delete this property? This action cannot be undone and will also delete all related documents and payments.')) {
+    if (!window.confirm('Are you sure you want to delete this property? This action cannot be undone and will also delete related payments.')) {
       return
     }
 
@@ -701,26 +696,6 @@ function  PropertyManagement() {
     }
   }
 
-  const handleDeleteDocument = async (documentId) => {
-    if (!selectedProperty || !documentId) return
-
-    try {
-      const data = await fetchData(`/documents/${documentId}`, {
-        method: 'DELETE'
-      })
-
-      if (data.success) {
-        showNotification('Document deleted successfully!', 'success')
-        await fetchPropertyDocuments(selectedProperty.id)
-      } else {
-        showNotification(data.error || 'Failed to delete document', 'error')
-      }
-    } catch (err) {
-      console.error('Error deleting document:', err)
-      showNotification('Failed to delete document', 'error')
-    }
-  }
-
   const handleAssignBuyerBroker = (property) => {
     setSelectedProperty(property)
     // Set current buyer and broker if they exist
@@ -735,8 +710,7 @@ function  PropertyManagement() {
   }
 
   const handleSaveAssignment = async () => {
-    if (!selectedProperty || !assignData.buyerId) {
-      showNotification('Please select a buyer', 'error')
+    if (!selectedProperty) {
       return
     }
 
@@ -745,7 +719,7 @@ function  PropertyManagement() {
       const data = await fetchData(`/properties/${selectedProperty.id}`, {
         method: 'PUT',
         body: JSON.stringify({
-          buyerId: assignData.buyerId,
+          buyerId: assignData.buyerId || null,
           brokerId: assignData.brokerId || null
         })
       })
@@ -1634,72 +1608,11 @@ function  PropertyManagement() {
                 </div>
               </div>
 
-              {/* Documents Card */}
-              <div className="property-detail-card">
-                <div className="property-detail-card-header">
-                  <FileText size={18} />
-                  <h3>Documents</h3>
-                </div>
-                <div className="property-detail-card-content">
-                  {loadingDocuments ? (
-                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
-                      <p>Loading documents...</p>
-                    </div>
-                  ) : documents.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {documents.map((doc) => (
-                        <div key={doc.id || doc._id} style={{ 
-                          padding: '12px',
-                          backgroundColor: '#f9fafb',
-                          borderRadius: '8px',
-                          border: '1px solid #e5e7eb',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                              <FileText size={16} style={{ color: '#6b7280' }} />
-                              <p style={{ fontWeight: '500', margin: 0 }}>
-                                {doc.name || doc.fileName || 'Document'}
-                              </p>
-                            </div>
-                            <div style={{ fontSize: '0.875em', color: 'var(--text-secondary)', marginLeft: '24px' }}>
-                              {doc.type && <span style={{ textTransform: 'capitalize' }}>{doc.type}</span>}
-                              {doc.fileSize && <span> • {(doc.fileSize / 1024).toFixed(2)} KB</span>}
-                              {doc.uploadedAt && <span> • {new Date(doc.uploadedAt).toLocaleDateString()}</span>}
-                            </div>
-                          </div>
-                          {doc.downloadUrl && (
-                            <a
-                              href={doc.downloadUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="btn btn-outline"
-                              style={{ padding: '6px 12px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <ExternalLink size={14} />
-                              View
-                            </a>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                    <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
-                      <FileText size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                      <p>No documents uploaded yet</p>
-                    </div>
-                )}
-                </div>
-              </div>
-
               <div className="modal-actions">
                 <button className="btn btn-outline" onClick={() => {
                   setShowDetailsModal(false)
                   setProgressData(null)
                   setGalleryImages([])
-                  setDocuments([])
                 }}>Close</button>
               </div>
             </div>
@@ -1897,10 +1810,9 @@ function  PropertyManagement() {
                 onChange={setAddPropertyData}
                 projects={projects}
                 isEditMode={false}
-        showGallery={true}
-        showDocuments={false}
-        pendingGalleryFiles={pendingGalleryFiles}
-        onQueueGalleryFile={handleQueueGalleryFile}
+                showGallery={true}
+                pendingGalleryFiles={pendingGalleryFiles}
+                onQueueGalleryFile={handleQueueGalleryFile}
               />
               <div className="modal-actions" style={{ marginTop: '24px' }}>
                 <button 
@@ -1935,7 +1847,6 @@ function  PropertyManagement() {
               <button className="close-btn" onClick={() => {
                 setShowEditPropertyModal(false)
                 setGalleryImages([])
-                setDocuments([])
                 setEditPropertyData(null)
                 setSelectedProperty(null)
               }}>×</button>
@@ -1947,14 +1858,9 @@ function  PropertyManagement() {
                 projects={projects}
                 isEditMode={true}
                 showGallery={true}
-        showDocuments={false}
                 galleryImages={galleryImages}
                 loadingGallery={loadingGallery}
                 onUploadGalleryImage={handleUploadGalleryImage}
-                documents={documents}
-                loadingDocuments={loadingDocuments}
-                onUploadDocument={handleUploadDocument}
-                onDeleteDocument={handleDeleteDocument}
               />
               <div className="modal-actions" style={{ marginTop: '24px' }}>
                 <button 
@@ -1962,7 +1868,6 @@ function  PropertyManagement() {
                   onClick={() => {
                     setShowEditPropertyModal(false)
                     setGalleryImages([])
-                    setDocuments([])
                     setEditPropertyData(null)
                     setSelectedProperty(null)
                   }}
@@ -2424,14 +2329,13 @@ function  PropertyManagement() {
 
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-                  Buyer <span style={{ color: '#dc2626' }}>*</span>
+                  Buyer <span style={{ color: 'var(--text-secondary)' }}></span>
                 </label>
                 <SearchableSelect
                   value={assignData.buyerId}
                   onChange={(value) => setAssignData({ ...assignData, buyerId: value })}
                   options={availableBuyers}
-                  placeholder="Select a buyer"
-                  required
+                placeholder="No buyer"
                   getOptionLabel={(buyer) => {
                     const name = buyer.name || buyer.email || 'Unknown'
                     const email = buyer.email && buyer.name ? ` (${buyer.email})` : ''
@@ -2448,10 +2352,10 @@ function  PropertyManagement() {
                 <SearchableSelect
                   value={assignData.brokerId || ''}
                   onChange={(value) => setAssignData({ ...assignData, brokerId: value || '' })}
-                  options={[{ id: '', name: 'No broker (optional)', _id: '' }, ...availableBrokers]}
-                  placeholder="No broker (optional)"
+                  options={availableBrokers}
+                  placeholder="No broker"
                   getOptionLabel={(broker) => {
-                    if (!broker.id && !broker._id) return 'No broker (optional)'
+                    if (!broker.id && !broker._id) return 'No broker'
                     const name = broker.name || broker.email || 'Unknown'
                     const company = broker.company ? ` (${broker.company})` : ''
                     const email = broker.email && (broker.name || broker.company) ? ` - ${broker.email}` : (broker.email ? ` (${broker.email})` : '')
@@ -2479,7 +2383,7 @@ function  PropertyManagement() {
                 <button 
                   className="btn btn-primary" 
                   onClick={handleSaveAssignment}
-                  disabled={loadingAssign || !assignData.buyerId}
+                  disabled={loadingAssign}
                 >
                   {loadingAssign ? 'Assigning...' : 'Assign'}
                 </button>
