@@ -44,9 +44,15 @@
 /* Stats Grid */
 .stats-grid-all {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 20px;
   margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .stats-grid-all {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stat-card-all {
@@ -218,7 +224,7 @@
   text-transform: uppercase;
 }
 
-.type-user {
+.type-buyer {
   background: #DBEAFE;
   color: #1E40AF;
 }
@@ -316,6 +322,75 @@
 
   .filter-select {
     width: 100%;
+  }
+}
+
+/* Notification Toast */
+.all-users-page .notification-toast,
+.notification-toast {
+  position: fixed !important;
+  top: 80px !important;
+  right: 20px !important;
+  bottom: auto !important;
+  left: auto !important;
+  padding: 14px 20px !important;
+  border-radius: 8px !important;
+  background: hsl(var(--card)) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 9999 !important;
+  animation: slideIn 0.3s ease-out !important;
+  font-weight: 500 !important;
+  min-width: 250px !important;
+  max-width: 400px !important;
+  width: auto !important;
+  border: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--foreground)) !important;
+  height: auto !important;
+  min-height: auto !important;
+  max-height: none !important;
+  line-height: 1.5 !important;
+  word-wrap: break-word !important;
+  white-space: normal !important;
+  display: inline-block !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  flex: none !important;
+  align-self: auto !important;
+}
+
+.notification-toast.success {
+  border-left: 4px solid hsl(142 76% 36%);
+  background: hsl(142 76% 36%) !important;
+  color: white !important;
+}
+
+.notification-toast.error {
+  border-left: 4px solid hsl(var(--destructive));
+  background: hsl(var(--destructive)) !important;
+  color: white !important;
+}
+
+.notification-toast.info {
+  border-left: 4px solid hsl(var(--primary));
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
+
+.notification-toast.warning {
+  border-left: 4px solid hsl(38 92% 50%);
+  background: hsl(38 92% 50%) !important;
+  color: white !important;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 

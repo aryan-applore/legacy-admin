@@ -1,0 +1,145 @@
+.confirmation-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.confirmation-modal-content {
+  background: hsl(var(--card));
+  border-radius: 12px;
+  max-width: 500px;
+  width: 100%;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid hsl(var(--border));
+  animation: slideUp 0.3s ease;
+  overflow: hidden;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.confirmation-modal-header {
+  padding: 24px;
+  border-bottom: 1px solid hsl(var(--border));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.confirmation-modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: hsl(var(--destructive) / 0.1);
+  flex-shrink: 0;
+}
+
+.confirmation-modal-icon .icon-danger {
+  color: hsl(var(--destructive));
+}
+
+.confirmation-modal-icon .icon-warning {
+  color: hsl(38 92% 50%);
+}
+
+.confirmation-modal-icon .icon-info {
+  color: hsl(var(--primary));
+}
+
+.confirmation-modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.confirmation-modal-body {
+  padding: 24px;
+}
+
+.confirmation-modal-body p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: hsl(var(--muted-foreground));
+}
+
+.confirmation-modal-actions {
+  padding: 16px 24px;
+  border-top: 1px solid hsl(var(--border));
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.btn-outline:hover {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--border));
+}
+
+.btn-primary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+}
+
+.btn-primary:hover {
+  background: hsl(var(--primary) / 0.9);
+}
+
+.btn-danger {
+  background: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  border-color: hsl(var(--destructive));
+}
+
+.btn-danger:hover {
+  background: hsl(var(--destructive) / 0.9);
+}
+

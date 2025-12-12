@@ -29,7 +29,7 @@ export const getProgress = (property) => {
 }
 
 export const getDisplayStage = (stage) => {
-  if (!stage || stage.trim() === '') return 'None'
+  if (!stage || stage.trim() === '') return ''
   const stageLower = stage.toLowerCase()
   if (stageLower.includes('foundation')) {
     return 'Foundation'
@@ -42,6 +42,7 @@ export const getDisplayStage = (stage) => {
 }
 
 export const getStageColorClass = (stage) => {
+  if (!stage) return 'status-info'
   const stageLower = stage.toLowerCase()
   if (stageLower.includes('foundation')) return 'status-error'
   if (stageLower.includes('structure')) return 'status-info'

@@ -1,55 +1,31 @@
-import { useState } from 'react'
-import { useApiFetch } from '../../lib/apiHelpers'
+import { useState, useEffect } from 'react'
+import { useAuth } from '../../contexts/AuthContext'
 import './Login.css'
 
-// API Base URL
-
-
-function Login({ onLogin }) {
+function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const { fetchData } = useApiFetch()
+  const { login, loading, user } = useAuth()
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      window.location.href = '/'
+    }
+  }, [user])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
 
     try {
-      const data = await fetchData('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password: password
-        })
-      })
-
-      if (data.success && data.data.token) {
-        // Allow admin, buyer, broker, and supplier roles
-        const allowedRoles = ['admin', 'buyer', 'broker', 'supplier']
-        if (data.data.account && allowedRoles.includes(data.data.account.role)) {
-          // Store token in localStorage
-          localStorage.setItem('adminToken', data.data.token)
-          localStorage.setItem('adminUser', JSON.stringify(data.data.account))
-          
-          // Call onLogin callback
-          if (onLogin) {
-            onLogin(data.data.token, data.data.account)
-          }
-        } else {
-          setError('Access denied. Invalid account type.')
-          setLoading(false)
-        }
-      } else {
-        setError(data.error || 'Invalid email or password')
-        setLoading(false)
-      }
+      await login(email, password)
+      // Redirect to dashboard on successful login
+      window.location.href = '/'
     } catch (err) {
       console.error('Login error:', err)
-      setError('Failed to connect to server. Please check if the backend is running.')
-      setLoading(false)
+      setError(err.message || 'Failed to connect to server. Please check if the backend is running.')
     }
   }
 

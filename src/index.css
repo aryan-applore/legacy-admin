@@ -74,6 +74,29 @@
   }
 }
 
+/* Fix for dropdown menu card transparency - ensure solid background */
+[data-radix-dropdown-menu-content],
+[data-radix-dropdown-menu-content]:hover,
+[data-radix-dropdown-menu-content]:focus,
+[role="menu"],
+[role="menu"]:hover,
+.bg-popover,
+[class*="bg-popover"] {
+  background-color: hsl(var(--popover)) !important;
+  background: hsl(var(--popover)) !important;
+  opacity: 1 !important;
+}
+
+/* Ensure dropdown menu items have solid background on hover */
+[data-radix-dropdown-menu-item]:hover,
+[data-radix-dropdown-menu-item]:focus,
+[role="menuitem"]:hover,
+[role="menuitem"]:focus {
+  background-color: hsl(var(--accent)) !important;
+  background: hsl(var(--accent)) !important;
+  opacity: 1 !important;
+}
+
 /* Custom utility classes without gradients */
 .container {
   @apply max-w-[1400px] mx-auto px-5;

@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import Sidebar from '../Sidebar/Sidebar'
 import Header from '../Header/Header'
 import './Layout.css'
 
-function Layout({ onLogout }) {
+function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const navigate = useNavigate()
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen)
@@ -15,11 +16,16 @@ function Layout({ onLogout }) {
     setSidebarOpen(false)
   }
 
+  const handleLogout = async () => {
+    // Logout is handled by Header component using AuthContext
+    navigate('/login')
+  }
+
   return (
     <div className="layout">
       <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
       <div className="main-content">
-        <Header onMenuClick={toggleSidebar} onLogout={onLogout} />
+        <Header onMenuClick={toggleSidebar} />
         <div className="content-area">
           <Outlet />
         </div>

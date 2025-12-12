@@ -31,6 +31,8 @@ import { DataTableColumnHeader } from "@/components/data-table/data-table-column
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { useApiFetch, useNotification, API_BASE_URL } from '../../lib/apiHelpers'
+import { useConfirmation } from '../../hooks/useConfirmation'
+import ConfirmationModal from '../../components/ConfirmationModal/ConfirmationModal'
 
 function ProductManagement() {
   const [products, setProducts] = useState([])
@@ -41,8 +43,12 @@ function ProductManagement() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showStockModal, setShowStockModal] = useState(false)
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [showCategoryFormModal, setShowCategoryFormModal] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState(null)
   const [notification, showNotification] = useNotification()
   const { fetchData } = useApiFetch()
+  const { confirmation, confirm, close, handleConfirm, handleCancel } = useConfirmation()
 
   // Search and Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -167,17 +173,27 @@ function ProductManagement() {
   }
 
   const handleDeleteProduct = async (productId) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
-      const result = await fetchData(`/products/${productId}`, { method: 'DELETE' })
-      if (result.success) {
-        showNotification('Product deleted successfully!', 'success')
-        const productsRes = await fetchData('/products')
-        if (productsRes.success) {
-          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+    try {
+      const confirmed = await confirm({
+        title: 'Delete Product',
+        message: 'Are you sure you want to delete this product?',
+        confirmText: 'Delete',
+        cancelText: 'Cancel'
+      })
+      if (confirmed) {
+        const result = await fetchData(`/products/${productId}`, { method: 'DELETE' })
+        if (result.success) {
+          showNotification('Product deleted successfully!', 'success')
+          const productsRes = await fetchData('/products')
+          if (productsRes.success) {
+            setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+          }
+        } else {
+          showNotification(result.error || 'Failed to delete product', 'error')
         }
-      } else {
-        showNotification(result.error || 'Failed to delete product', 'error')
       }
+    } catch {
+      // User cancelled
     }
   }
 
@@ -202,6 +218,84 @@ function ProductManagement() {
       setSelectedProduct(null)
     } else {
       showNotification(result.error || 'Failed to update stock', 'error')
+    }
+  }
+
+  // Category Management Handlers
+  const handleSaveCategory = async (e) => {
+    e.preventDefault()
+    const formData = new FormData(e.target)
+    const categoryData = {
+      name: formData.get('name'),
+      description: formData.get('description') || ''
+    }
+
+    const endpoint = selectedCategory 
+      ? `/products/categories/${selectedCategory._id || selectedCategory.id}`
+      : '/products/categories'
+    const method = selectedCategory ? 'PUT' : 'POST'
+
+    try {
+      const result = await fetchData(endpoint, {
+        method,
+        body: JSON.stringify(categoryData)
+      })
+
+      if (result.success) {
+        showNotification(
+          selectedCategory ? 'Category updated successfully!' : 'Category created successfully!',
+          'success'
+        )
+        // Refresh categories
+        const categoriesRes = await fetchData('/products/categories')
+        if (categoriesRes.success) {
+          setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : [])
+        }
+        setShowCategoryFormModal(false)
+        setSelectedCategory(null)
+      } else {
+        showNotification(result.error || 'Failed to save category', 'error')
+      }
+    } catch (error) {
+      console.error('Error saving category:', error)
+      showNotification('Failed to save category', 'error')
+    }
+  }
+
+  const handleDeleteCategory = async (categoryId) => {
+    const category = categories.find(c => (c._id || c.id) === categoryId)
+    if (!category) return
+
+    try {
+      const confirmed = await confirm({
+        title: 'Delete Category',
+        message: `Are you sure you want to delete the category "${category.name}"? This action cannot be undone.`,
+        confirmText: 'Delete',
+        cancelText: 'Cancel'
+      })
+      if (confirmed) {
+        try {
+          const result = await fetchData(`/products/categories/${categoryId}`, {
+            method: 'DELETE'
+          })
+
+          if (result.success) {
+            showNotification('Category deleted successfully!', 'success')
+            // Refresh categories
+            const categoriesRes = await fetchData('/products/categories')
+            if (categoriesRes.success) {
+              setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : [])
+            }
+          } else {
+            showNotification(result.error || 'Failed to delete category', 'error')
+          }
+        } catch (error) {
+          console.error('Error deleting category:', error)
+          showNotification('Failed to delete category', 'error')
+        }
+      }
+    } catch {
+      // User cancelled
     }
   }
 
@@ -351,10 +445,15 @@ function ProductManagement() {
           <h1 className="page-title-main">Product Management</h1>
           <p className="page-subtitle">Manage product inventory and stock levels</p>
         </div>
-        <Button onClick={handleAddProduct}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Product
-        </Button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <Button onClick={() => setShowCategoryModal(true)} variant="outline">
+            Manage Categories
+          </Button>
+          <Button onClick={handleAddProduct}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -584,6 +683,149 @@ function ProductManagement() {
           </div>
         </div>
       )}
+
+      {/* Category Management Modal */}
+      {showCategoryModal && (
+        <div className="modal-overlay" onClick={() => setShowCategoryModal(false)}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Manage Categories</h2>
+              <button className="close-btn" onClick={() => setShowCategoryModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '20px' }}>
+                <Button onClick={() => {
+                  setSelectedCategory(null)
+                  setShowCategoryFormModal(true)
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add New Category
+                </Button>
+              </div>
+              <div className="table-container" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Name</th>
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Description</th>
+                      <th style={{ padding: '12px', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categories.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" style={{ padding: '20px', textAlign: 'center', color: '#6b7280' }}>
+                          No categories found. Click "Add New Category" to create one.
+                        </td>
+                      </tr>
+                    ) : (
+                      categories.map((category) => (
+                        <tr key={category._id || category.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                          <td style={{ padding: '12px' }}>{category.name}</td>
+                          <td style={{ padding: '12px' }}>{category.description || 'N/A'}</td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedCategory(category)
+                                  setShowCategoryFormModal(true)
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteCategory(category._id || category.id)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Form Modal (Create/Edit) */}
+      {showCategoryFormModal && (
+        <div className="modal-overlay" onClick={() => {
+          setShowCategoryFormModal(false)
+          setSelectedCategory(null)
+        }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{selectedCategory ? 'Edit Category' : 'Add New Category'}</h2>
+              <button className="close-btn" onClick={() => {
+                setShowCategoryFormModal(false)
+                setSelectedCategory(null)
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveCategory}>
+                <div className="form-group">
+                  <label>Category Name *</label>
+                  <input
+                    type="text"
+                    name="name"
+                    defaultValue={selectedCategory?.name || ''}
+                    placeholder="Enter category name"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea
+                    name="description"
+                    rows="3"
+                    defaultValue={selectedCategory?.description || ''}
+                    placeholder="Enter category description (optional)"
+                  ></textarea>
+                </div>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setShowCategoryFormModal(false)
+                      setSelectedCategory(null)
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary">
+                    {selectedCategory ? 'Update Category' : 'Create Category'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={close}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+        title={confirmation.title}
+        message={confirmation.message}
+        confirmText={confirmation.confirmText}
+        cancelText={confirmation.cancelText}
+        variant={confirmation.variant}
+      />
 
       {/* Notification Toast */}
       {notification && (

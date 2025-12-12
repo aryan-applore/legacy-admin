@@ -16,12 +16,15 @@ import {
   ChevronRight,
   Bell,
   Megaphone,
-  User
+  User,
+  Shield
 } from 'lucide-react'
+import { useAuth } from '../../contexts/AuthContext'
 import './Sidebar.css'
 
 function Sidebar({ isOpen, onClose }) {
   const location = useLocation()
+  const { user, hasPermission, isSuperAdmin } = useAuth()
   const [expandedMenus, setExpandedMenus] = useState(() => {
     // Auto-expand menus if on any of their sub-routes
     const usersRoutes = ['/users']
@@ -31,29 +34,6 @@ function Sidebar({ isOpen, onClose }) {
     if (projectsRoutes.some(route => location.pathname.startsWith(route))) expanded.push('projects')
     return expanded
   })
-
-  // Get current user from localStorage
-  const currentUser = useMemo(() => {
-    try {
-      const userStr = localStorage.getItem('adminUser')
-      return userStr ? JSON.parse(userStr) : null
-    } catch (err) {
-      console.error('Error parsing user:', err)
-      return null
-    }
-  }, [])
-
-  // Check if user is admin (admins have access to everything)
-  const isAdmin = currentUser?.role === 'admin'
-
-  // Get user permissions
-  const userPermissions = useMemo(() => {
-    if (isAdmin) {
-      // Admins have access to all sections
-      return ['dashboard', 'users', 'buyers', 'brokers', 'suppliers', 'property-management', 'product-management', 'order-management', 'project-management', 'documents', 'support', 'notifications', 'marketing', 'profile']
-    }
-    return currentUser?.permissions || []
-  }, [currentUser, isAdmin])
 
   const toggleMenu = (menuId) => {
     setExpandedMenus(prev =>
@@ -88,32 +68,37 @@ function Sidebar({ isOpen, onClose }) {
       path: '/',
       name: 'Dashboard',
       icon: <BarChart3 size={20} />,
-      permissionId: 'dashboard'
+      resource: 'dashboard',
+      action: 'read'
     },
     {
       id: 'users',
       path: '/users',
       name: 'Users',
       icon: <UserCheck size={20} />,
-      permissionId: 'users',
+      resource: 'users',
+      action: 'read',
       subItems: [
         {
           path: '/users/buyers',
           name: 'Buyers',
           icon: <Users size={18} />,
-          permissionId: 'buyers'
+          resource: 'buyers',
+          action: 'read'
         },
         {
           path: '/users/brokers',
           name: 'Brokers',
           icon: <Handshake size={18} />,
-          permissionId: 'brokers'
+          resource: 'brokers',
+          action: 'read'
         },
         {
           path: '/users/suppliers',
           name: 'Suppliers',
           icon: <Factory size={18} />,
-          permissionId: 'suppliers'
+          resource: 'suppliers',
+          action: 'read'
         }
       ]
     },
@@ -122,25 +107,29 @@ function Sidebar({ isOpen, onClose }) {
       path: '/projects',
       name: 'Projects',
       icon: <Building2 size={20} />,
-      permissionId: 'project-management',
+      resource: 'projects',
+      action: 'read',
       subItems: [
         {
           path: '/projects/properties',
           name: 'Properties',
           icon: <Home size={18} />,
-          permissionId: 'property-management'
+          resource: 'properties',
+          action: 'read'
         },
         {
           path: '/projects/marketing',
           name: 'Marketing',
           icon: <Megaphone size={18} />,
-          permissionId: 'marketing'
+          resource: 'marketing',
+          action: 'read'
         },
         {
           path: '/projects/documents',
           name: 'Documents',
           icon: <FileText size={18} />,
-          permissionId: 'documents'
+          resource: 'documents',
+          action: 'read'
         }
       ]
     },
@@ -148,56 +137,79 @@ function Sidebar({ isOpen, onClose }) {
       path: '/product',
       name: 'Product',
       icon: <Package size={20} />,
-      permissionId: 'product-management'
+      resource: 'products',
+      action: 'read'
     },
     {
       path: '/order',
       name: 'Order',
       icon: <ShoppingCart size={20} />,
-      permissionId: 'order-management'
+      resource: 'supplier-orders',
+      action: 'read'
     },
     {
       path: '/support',
       name: 'Support',
       icon: <Headphones size={20} />,
-      permissionId: 'support'
+      resource: 'support',
+      action: 'read'
     },
     {
       path: '/notifications',
       name: 'Notifications',
       icon: <Bell size={20} />,
-      permissionId: 'notifications'
+      resource: 'notifications',
+      action: 'read'
+    },
+    {
+      path: '/admins',
+      name: 'Admin Management',
+      icon: <Shield size={20} />,
+      resource: 'admins',
+      action: 'read',
+      superadminOnly: true
     },
     {
       path: '/profile',
       name: 'Profile',
       icon: <User size={20} />,
-      permissionId: 'profile'
+      resource: null, // Profile is accessible to all authenticated users
+      action: null
     }
   ]
 
   // Filter menu items based on user permissions
   const menuItems = useMemo(() => {
     return allMenuItems.filter(item => {
+      // Superadmin only items
+      if (item.superadminOnly && !isSuperAdmin()) {
+        return false
+      }
+      
+      // Profile is accessible to all authenticated users
+      if (!item.resource && !item.action) {
+        return true
+      }
+      
       if (item.subItems) {
         // Show parent if user has permission to any sub-item
-        return userPermissions.includes(item.permissionId) ||
-          item.subItems.some(subItem => userPermissions.includes(subItem.permissionId))
+        return hasPermission(item.resource, item.action) ||
+          item.subItems.some(subItem => hasPermission(subItem.resource, subItem.action))
       }
-      return userPermissions.includes(item.permissionId)
+      return hasPermission(item.resource, item.action)
     }).map(item => {
       if (item.subItems) {
         // Filter sub-items based on permissions
         return {
           ...item,
           subItems: item.subItems.filter(subItem =>
-            userPermissions.includes(subItem.permissionId)
+            hasPermission(subItem.resource, subItem.action)
           )
         }
       }
       return item
     })
-  }, [userPermissions])
+  }, [user, hasPermission, isSuperAdmin])
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>

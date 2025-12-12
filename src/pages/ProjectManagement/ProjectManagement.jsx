@@ -63,8 +63,11 @@ const calculateStats = (projects, properties) => {
     ? Math.round(projects.reduce((sum, p) => sum + (p.progressPercentage || 0), 0) / total)
     : 0
   
-  // Get unique buyers from projects
-  const allBuyerIds = new Set(projects.flatMap(p => p.buyers?.map(b => b.id || b._id) || []))
+  // Get unique buyers from properties (not from projects)
+  const allBuyerIds = new Set(properties.flatMap(p => {
+    const buyers = p.buyers || (p.buyer ? [p.buyer] : [])
+    return buyers.map(b => b.id || b._id).filter(Boolean)
+  }))
   
   // Get unique brokers from properties
   const allBrokerIds = new Set(properties.flatMap(p => {
@@ -81,25 +84,28 @@ const calculateStats = (projects, properties) => {
   }
 }
 
-// DRY: Get brokers for a project (aggregated from properties)
-const getProjectBrokers = (projectId, properties) => {
-  const projectProperties = properties.filter(p => {
+// DRY: Get properties for a project (supports properties array and project embed)
+const getProjectProperties = (projectId, properties, projects) => {
+  // First, try to get full property objects from properties array
+  const fromProperties = properties.filter(p => {
     const propProjectId = p.projectId?.id || p.projectId?._id || p.projectId
     return propProjectId === projectId
   })
+
+  if (fromProperties.length > 0) return fromProperties
+
+  // Fallback to properties embedded in project response
+  const project = projects.find(p => (p.id || p._id) === projectId)
+  const embeddedProperties = Array.isArray(project?.properties) ? project.properties : []
   
-  const brokerMap = new Map()
-  projectProperties.forEach(prop => {
-    const brokers = prop.brokers || (prop.broker ? [prop.broker] : [])
-    brokers.forEach(broker => {
-      const id = broker.id || broker._id
-      if (id && !brokerMap.has(id)) {
-        brokerMap.set(id, broker)
-      }
-    })
+  // Enrich embedded properties with full property data if available
+  return embeddedProperties.map(embeddedProp => {
+    const fullProperty = properties.find(p => 
+      (p.id || p._id) === (embeddedProp.id || embeddedProp._id)
+    )
+    // Merge embedded property data with full property data
+    return fullProperty ? { ...fullProperty, ...embeddedProp } : embeddedProp
   })
-  
-  return Array.from(brokerMap.values())
 }
 
 // DRY: Status configuration
@@ -117,9 +123,6 @@ function ProjectManagement() {
   const [showModal, setShowModal] = useState(false)
   const [selectedProject, setSelectedProject] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [showAssignmentsModal, setShowAssignmentsModal] = useState(false)
-  const [availableBuyers, setAvailableBuyers] = useState([])
-  const [availableBrokers, setAvailableBrokers] = useState([])
   const [notification, showNotification] = useNotification()
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState('All Status')
@@ -136,49 +139,27 @@ function ProjectManagement() {
         setLoading(true)
         setError(null)
         
-        const [projectsRes, propertiesRes, usersRes] = await Promise.all([
-          fetchData('/projects'),
-          fetchData('/properties'),
-          fetchData('/users'),
-        ])
+        const projectsRes = await fetchData('/projects')
         
         if (projectsRes.success) {
-          const projectsData = projectsRes.data || []
-          setProjects(Array.isArray(projectsData) ? projectsData : [])
-          console.log('Projects loaded:', projectsData.length)
+          const projectsData = Array.isArray(projectsRes.data) ? projectsRes.data : []
+          setProjects(projectsData)
+
+          // Derive properties from embedded project data (new API response)
+          const derivedProperties = projectsData.flatMap(p =>
+            Array.isArray(p.properties)
+              ? p.properties.map(prop => ({
+                  ...prop,
+                  projectId: prop.projectId || p.id || p._id, // ensure projectId present
+                }))
+              : []
+          )
+          setProperties(derivedProperties)
+          console.log('Projects loaded:', projectsData.length, 'Properties derived:', derivedProperties.length)
         } else {
           console.error('Failed to load projects:', projectsRes.error)
           setProjects([])
-        }
-        
-        if (propertiesRes.success) {
-          // Handle different response structures
-          const propsData = propertiesRes.data?.properties || propertiesRes.data || []
-          const propsArray = Array.isArray(propsData) ? propsData : []
-          setProperties(propsArray)
-          console.log('Properties loaded:', propsArray.length)
-        } else {
-          console.error('Failed to load properties:', propertiesRes.error)
           setProperties([])
-        }
-        
-        if (usersRes.success) {
-          const allUsers = usersRes.data || []
-          // Filter buyers and brokers from unified users response
-          const buyersData = allUsers.filter(user => 
-            user.type === 'buyer' || user.role === 'buyer'
-          )
-          const brokersData = allUsers.filter(user => 
-            user.type === 'broker' || user.role === 'broker'
-          )
-          setAvailableBuyers(Array.isArray(buyersData) ? buyersData : [])
-          setAvailableBrokers(Array.isArray(brokersData) ? brokersData : [])
-          console.log('Buyers loaded:', buyersData.length)
-          console.log('Brokers loaded:', brokersData.length)
-        } else {
-          console.error('Failed to load users:', usersRes.error)
-          setAvailableBuyers([])
-          setAvailableBrokers([])
         }
       } catch (err) {
         console.error('Error loading data:', err)
@@ -200,15 +181,13 @@ function ProjectManagement() {
       name: formData.get('name'),
       status: formData.get('status'),
       progressPercentage: parseInt(formData.get('progressPercentage')) || 0,
-      currentStage: formData.get('currentStage'),
       location: {
         address: formData.get('address'),
         city: formData.get('city'),
         state: formData.get('state'),
         pincode: formData.get('pincode')
       },
-      expectedHandoverDate: formData.get('expectedHandoverDate') || undefined,
-      buyers: Array.from(document.querySelectorAll('input[name="buyers"]:checked')).map(cb => cb.value)
+      expectedHandoverDate: formData.get('expectedHandoverDate') || undefined
     }
 
     const endpoint = selectedProject ? `/projects/${selectedProject.id}` : '/projects'
@@ -224,13 +203,21 @@ function ProjectManagement() {
         selectedProject ? 'Project updated successfully!' : 'Project created successfully!',
         'success'
       )
-      // Reload data
-      const [projectsRes, propertiesRes] = await Promise.all([
-        fetchData('/projects'),
-        fetchData('/properties'),
-      ])
-      if (projectsRes.success) setProjects(projectsRes.data || [])
-      if (propertiesRes.success) setProperties(propertiesRes.data || [])
+      // Reload data (projects now include embedded properties)
+      const projectsRes = await fetchData('/projects')
+      if (projectsRes.success) {
+        const projectsData = Array.isArray(projectsRes.data) ? projectsRes.data : []
+        setProjects(projectsData)
+        const derivedProperties = projectsData.flatMap(p =>
+          Array.isArray(p.properties)
+            ? p.properties.map(prop => ({
+                ...prop,
+                projectId: prop.projectId || p.id || p._id,
+              }))
+            : []
+        )
+        setProperties(derivedProperties)
+      }
       
       setShowModal(false)
       setSelectedProject(null)
@@ -254,27 +241,6 @@ function ProjectManagement() {
     }
   }
 
-  // DRY: Save assignments handler
-  const handleSaveAssignments = async (e) => {
-    e.preventDefault()
-    const selectedBuyers = Array.from(document.querySelectorAll('input[name="buyers"]:checked'))
-      .map(cb => cb.value)
-
-    const result = await fetchData(`/projects/${selectedProject.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ buyers: selectedBuyers })
-    })
-    
-    if (result.success) {
-      showNotification('Assignments updated successfully!', 'success')
-      const projectsRes = await fetchData('/projects')
-      if (projectsRes.success) setProjects(projectsRes.data || [])
-      setShowAssignmentsModal(false)
-      setSelectedProject(null)
-    } else {
-      showNotification(result.error || 'Failed to update assignments', 'error')
-    }
-  }
 
   // DRY: Action handlers
   const actions = {
@@ -285,10 +251,6 @@ function ProjectManagement() {
     edit: (project) => {
       setSelectedProject(project)
       setShowModal(true)
-    },
-    assign: (project) => {
-      setSelectedProject(project)
-      setShowAssignmentsModal(true)
     },
     delete: handleDelete,
   }
@@ -370,51 +332,24 @@ function ProjectManagement() {
       },
     },
     {
-      id: "buyers",
+      id: "properties",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Buyers" />
+        <DataTableColumnHeader column={column} title="Properties" />
       ),
       cell: ({ row }) => {
-        const buyers = row.original.buyers || []
+        const projectProps = getProjectProperties(row.original.id, properties, projects)
         return (
           <div className="assignees-cell">
-            {buyers.length > 0 ? (
+            {projectProps.length > 0 ? (
               <>
                 <div className="assignees-avatars">
-                  {buyers.slice(0, 3).map((buyer, idx) => (
-                    <div key={buyer.id || buyer._id || idx} className="assignee-avatar">
-                      {buyer.name?.charAt(0) || '?'}
+                  {projectProps.slice(0, 3).map((prop, idx) => (
+                    <div key={prop.id || prop._id || idx} className="assignee-avatar">
+                      {(prop.id || prop._id || '').toString().slice(0, 2).toUpperCase() || 'P'}
                     </div>
                   ))}
                 </div>
-                <span className="assignees-count">{buyers.length}</span>
-              </>
-            ) : (
-              <span className="no-assignees">None</span>
-            )}
-          </div>
-        )
-      },
-    },
-    {
-      id: "brokers",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Brokers" />
-      ),
-      cell: ({ row }) => {
-        const brokers = getProjectBrokers(row.original.id, properties)
-        return (
-          <div className="assignees-cell">
-            {brokers.length > 0 ? (
-              <>
-                <div className="assignees-avatars">
-                  {brokers.slice(0, 3).map((broker, idx) => (
-                    <div key={broker.id || broker._id || idx} className="assignee-avatar broker-avatar">
-                      {broker.name?.charAt(0) || '?'}
-                    </div>
-                  ))}
-                </div>
-                <span className="assignees-count">{brokers.length}</span>
+                <span className="assignees-count">{projectProps.length}</span>
               </>
             ) : (
               <span className="no-assignees">None</span>
@@ -464,10 +399,6 @@ function ProjectManagement() {
                   <Edit className="mr-2 h-4 w-4" />
                   Edit Project
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => actions.assign(project)}>
-                  <Users className="mr-2 h-4 w-4" />
-                  Manage Assignments
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   onClick={() => actions.delete(project.id)}
@@ -482,7 +413,7 @@ function ProjectManagement() {
         )
       },
     },
-  ], [properties])
+  ], [properties, projects])
 
   const table = useReactTable({
     data: filteredProjects,
@@ -648,12 +579,6 @@ function ProjectManagement() {
       {/* Projects Table */}
       <div className="card projects-table-card">
         <div className="flex items-center justify-between py-4 px-4">
-          <Input
-            placeholder="Filter projects..."
-            value={(table.getColumn("name")?.getFilterValue() ?? "")}
-            onChange={(event) => table.getColumn("name")?.setFilterValue(event.target.value)}
-            className="max-w-sm"
-          />
           <DataTableViewOptions table={table} />
         </div>
         <div className="overflow-hidden rounded-md border">
@@ -718,7 +643,8 @@ function ProjectManagement() {
               <h2>{selectedProject ? 'Edit Project' : 'Create New Project'}</h2>
               <button className="close-btn" onClick={() => { setShowModal(false); setSelectedProject(null); }}>×</button>
             </div>
-            <form onSubmit={handleSave} className="project-form">
+            <div className="modal-body">
+              <form onSubmit={handleSave} className="project-form">
               <div className="form-row">
                 <div className="form-group">
                   <label>Project Name *</label>
@@ -772,11 +698,6 @@ function ProjectManagement() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Current Stage</label>
-                <input name="currentStage" defaultValue={selectedProject?.currentStage} />
-              </div>
-
               <div className="form-actions">
                 <Button type="button" variant="outline" onClick={() => { setShowModal(false); setSelectedProject(null); }}>
                   Cancel
@@ -785,7 +706,8 @@ function ProjectManagement() {
                   {selectedProject ? 'Update Project' : 'Create Project'}
                 </Button>
               </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -821,10 +743,6 @@ function ProjectManagement() {
                     <p>{selectedProject.progressPercentage || 0}%</p>
                   </div>
                   <div className="detail-item">
-                    <label>Current Stage</label>
-                    <p>{selectedProject.currentStage || 'N/A'}</p>
-                  </div>
-                  <div className="detail-item">
                     <label>Expected Handover</label>
                     <p>{selectedProject.expectedHandoverDate ? 
                       new Date(selectedProject.expectedHandoverDate).toLocaleDateString() : 'Not set'}</p>
@@ -855,34 +773,75 @@ function ProjectManagement() {
               </div>
 
               <div className="details-section">
-                <h4>Assigned Buyers ({selectedProject.buyers?.length || 0})</h4>
-                {selectedProject.buyers && selectedProject.buyers.length > 0 ? (
+                <h4>Properties ({getProjectProperties(selectedProject.id, properties, projects).length})</h4>
+                {getProjectProperties(selectedProject.id, properties, projects).length > 0 ? (
                   <div className="assignments-list">
-                    {selectedProject.buyers.map((buyer, idx) => (
-                      <div key={buyer.id || buyer._id || idx} className="assignment-item">
-                        <span>👤 {buyer.name}</span>
-                        <span className="assignment-meta">{buyer.email || 'N/A'}</span>
-                      </div>
-                    ))}
+                    {getProjectProperties(selectedProject.id, properties, projects).map((prop, idx) => {
+                      const propertyId = prop.id || prop._id
+                      const flatNo = prop.flatNo || 'N/A'
+                      const buildingName = prop.buildingName || ''
+                      const totalPrice = prop.pricing?.totalPrice 
+                        ? `₹${parseFloat(prop.pricing.totalPrice).toLocaleString('en-IN')}` 
+                        : prop.soldPrice 
+                          ? `₹${parseFloat(prop.soldPrice).toLocaleString('en-IN')}` 
+                          : 'N/A'
+                      const area = prop.specifications?.area 
+                        ? `${prop.specifications.area} sq.ft` 
+                        : ''
+                      const bedrooms = prop.specifications?.bedrooms || ''
+                      const hasBuyer = !!(prop.buyer || prop.buyerId)
+                      const status = hasBuyer ? 'sold' : (prop.status || 'active')
+                      
+                      // Buyer and brokers from property/project data
+                      const buyerId = prop.buyerId
+                      const brokerId = prop.brokerId
+                      const buyer = selectedProject.buyers?.find(b => (b.id || b._id) === buyerId) || prop.buyer
+                      const brokerPrimary = selectedProject.brokers?.find(b => (b.id || b._id) === brokerId) || prop.broker
+                      const brokerList = Array.isArray(prop.brokers) ? prop.brokers : []
+                      
+                      return (
+                        <div key={propertyId || idx} className="assignment-item property-detail-item">
+                          <div className="property-main-info">
+                            <span className="property-icon">🏠</span>
+                            <div className="property-info">
+                              <div className="property-title">
+                                {flatNo !== 'N/A' ? `Flat ${flatNo}` : `Property ${propertyId?.slice(-6) || idx + 1}`}
+                                {buildingName && <span className="property-building"> - {buildingName}</span>}
+                                <span className={`property-status ${status}`}>{status}</span>
+                              </div>
+                              <div className="property-details">
+                                {totalPrice !== 'N/A' && <span>Price: {totalPrice}</span>}
+                                {area && <span>Area: {area}</span>}
+                                {bedrooms && <span>{bedrooms} BHK</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="property-assignments">
+                            {buyer ? (
+                              <>
+                                <span className="assignment-badge buyer">👤 Buyer: {buyer.name}</span>
+                                {brokerPrimary && (
+                                  <span className="assignment-badge broker">🤝 Broker: {brokerPrimary.name}</span>
+                                )}
+                              </>
+                            ) : brokerList.length > 0 || brokerPrimary ? (
+                              <>
+                                {(brokerPrimary ? [brokerPrimary] : brokerList).map((bk, i) => (
+                                  <span key={bk.id || bk._id || i} className="assignment-badge broker">
+                                    🤝 Broker: {bk.name}
+                                  </span>
+                                ))}
+                              </>
+                            ) : (
+                              <span className="assignment-badge unassigned">Unassigned</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
-                  <p className="no-assignments">No buyers assigned</p>
-                )}
-              </div>
-
-              <div className="details-section">
-                <h4>Associated Brokers ({getProjectBrokers(selectedProject.id, properties).length})</h4>
-                {getProjectBrokers(selectedProject.id, properties).length > 0 ? (
-                  <div className="assignments-list">
-                    {getProjectBrokers(selectedProject.id, properties).map((broker, idx) => (
-                      <div key={broker.id || broker._id || idx} className="assignment-item">
-                        <span>🤝 {broker.name}</span>
-                        <span className="assignment-meta">{broker.email || 'N/A'} {broker.company ? `- ${broker.company}` : ''}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="no-assignments">No brokers associated (brokers are assigned at property level)</p>
+                  <p className="no-assignments">No properties linked to this project</p>
                 )}
               </div>
 
@@ -899,55 +858,6 @@ function ProjectManagement() {
         </div>
       )}
 
-      {/* Assignments Modal */}
-      {showAssignmentsModal && selectedProject && (
-        <div className="modal-overlay" onClick={() => { setShowAssignmentsModal(false); setSelectedProject(null); }}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Manage Assignments - {selectedProject.name}</h2>
-              <button className="close-btn" onClick={() => { setShowAssignmentsModal(false); setSelectedProject(null); }}>×</button>
-            </div>
-            <form onSubmit={handleSaveAssignments} className="assignment-form">
-              <div className="assignment-section">
-                <h3 className="section-title">Assign Buyers ({availableBuyers.length} available)</h3>
-                {availableBuyers.length > 0 ? (
-                  <div className="assignment-checkboxes">
-                    {availableBuyers.map(buyer => {
-                      const buyerId = buyer.id || buyer._id
-                      const isChecked = selectedProject.buyers?.some(b => (b.id || b._id) === buyerId)
-                      return (
-                        <label key={buyerId} className="assignment-checkbox-label">
-                          <input 
-                            type="checkbox" 
-                            name="buyers"
-                            value={buyerId}
-                            defaultChecked={isChecked}
-                          />
-                          <div className="assignment-info">
-                            <span className="assignment-name">👤 {buyer.name}</span>
-                            <span className="assignment-details">{buyer.email || 'N/A'}</span>
-                          </div>
-                        </label>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <p className="no-assignments">No buyers available</p>
-                )}
-              </div>
-
-              <div className="form-actions">
-                <Button type="button" variant="outline" onClick={() => { setShowAssignmentsModal(false); setSelectedProject(null); }}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="btn btn-primary">
-                  Save Assignments
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Notification Toast */}
       {notification && (
