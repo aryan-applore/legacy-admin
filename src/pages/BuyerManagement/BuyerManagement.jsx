@@ -103,7 +103,7 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
     // also check if installments are valid
     const isInstallmentsValid = installments.every(inst => inst.amount && inst.dueDate)
     const isInstallmentsBalanced = Math.abs(installmentDifference) <= 0.01
-    
+
     // If project is selected, property, soldPrice, and installments are all required
     const isValid = hasProperty && hasSoldPrice && hasInstallments && isInstallmentsValid && isInstallmentsBalanced
     onValidationChange(isValid)
@@ -286,7 +286,7 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
         <div className="form-row">
           <div className="form-group">
             <label>Sold Price (₹) {selectedProjectId ? '*' : ''}</label>
-            <input
+            <Input
               type="number"
               value={soldPrice}
               onChange={(e) => setSoldPrice(e.target.value)}
@@ -303,36 +303,26 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
             <strong style={{ fontSize: '14px' }}>
               Sold Price: ₹{totalPayment.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </strong>
-            <button
+            <Button
               type="button"
               onClick={handleAddInstallment}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: '#2A669B',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
+              className="bg-[#2A669B] hover:bg-[#1d4b73] text-white"
+              size="sm"
             >
-              <Plus size={14} />
+              <Plus size={14} className="mr-1" />
               Add Installment
-            </button>
+            </Button>
           </div>
 
           {/* Installments List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {installments.map((installment, index) => (
-              <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ flex: 1 }}>
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 160px auto', gap: '8px', alignItems: 'flex-end' }}>
+                <div className="form-group">
                   <label style={{ fontSize: '12px' }}>
                     Installment {index + 1} Amount (₹) {selectedProjectId ? '*' : ''}
                   </label>
-                  <input
+                  <Input
                     type="number"
                     value={installment.amount}
                     onChange={(e) => handleInstallmentChange(index, 'amount', e.target.value)}
@@ -342,45 +332,42 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
                     required={!!selectedProjectId}
                   />
                 </div>
-                <div className="form-group" style={{ flex: 1 }}>
+                <div className="form-group">
                   <label style={{ fontSize: '12px' }}>Due Date</label>
-                  <input
+                  <Input
                     type="date"
                     value={installment.dueDate}
                     onChange={(e) => handleInstallmentChange(index, 'dueDate', e.target.value)}
                   />
                 </div>
-                <div className="form-group" style={{ width: '160px' }}>
+                <div className="form-group">
                   <label style={{ fontSize: '12px' }}>Status</label>
                   <select
                     value={installment.status || 'pending'}
                     onChange={(e) => handleInstallmentChange(index, 'status', e.target.value)}
+                    className="w-full p-2 border rounded-md h-10 text-sm"
                   >
                     <option value="pending">Pending</option>
                     <option value="paid">Paid</option>
                   </select>
                 </div>
-                {installments.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveInstallment(index)}
-                    style={{
-                      padding: '8px',
-                      backgroundColor: '#dc2626',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      height: '38px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title="Remove installment"
-                  >
-                    <X size={16} />
-                  </button>
-                )}
+                <div className="form-group">
+                  <label style={{ fontSize: '12px', visibility: 'hidden' }}>&nbsp;</label>
+                  {installments.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => handleRemoveInstallment(index)}
+                      className="h-10 w-10"
+                      title="Remove installment"
+                    >
+                      <X size={16} />
+                    </Button>
+                  ) : (
+                    <div style={{ height: '40px', width: '40px' }}></div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
