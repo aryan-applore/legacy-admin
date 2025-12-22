@@ -164,7 +164,7 @@ function ProductManagement() {
       let imageUrl = selectedProduct?.image || ''
 
       // 1. Upload image if a new file is selected
-      if (imageFile) {
+      if (imageFile && imageFile instanceof File) {
         const uploadFormData = new FormData()
         uploadFormData.append('file', imageFile)
 
@@ -668,7 +668,7 @@ function ProductManagement() {
                       <div className="image-upload-controls">
                         <Input
                           type="file"
-                          accept="image/*"
+                          accept=".png,.jpg,.jpeg"
                           onChange={handleImageChange}
                           className="file-input"
                         />
@@ -710,12 +710,12 @@ function ProductManagement() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Price Per Unit *</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2.5 text-muted-foreground">₹</span>
+                    <div className="input-wrapper-relative">
+                      <span className="input-prefix-icon">₹</span>
                       <input
                         type="number"
                         name="pricePerUnit"
-                        className="pl-7"
+                        className="input-with-icon"
                         defaultValue={selectedProduct?.pricePerUnit || selectedProduct?.price || 0}
                         step="0.01"
                         required
@@ -724,7 +724,34 @@ function ProductManagement() {
                   </div>
                   <div className="form-group">
                     <label>Unit</label>
-                    <input type="text" name="unit" defaultValue={selectedProduct?.unit || 'pieces'} />
+                    <select
+                      name="unit"
+                      defaultValue={selectedProduct?.unit || 'pieces'}
+                      className="w-full p-2 border rounded"
+                    >
+                      {[
+                        'units',
+                        'pieces',
+                        'kg',
+                        'grams',
+                        'tons',
+                        'liters',
+                        'milliliters',
+                        'bags',
+                        'boxes',
+                        'cubic meters',
+                        'square meters',
+                        'meters',
+                        'feet',
+                        'inches',
+                        'gallons',
+                        'quintals',
+                      ].map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="form-row">

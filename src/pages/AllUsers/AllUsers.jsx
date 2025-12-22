@@ -95,7 +95,7 @@ function AllUsers() {
         const allUsersData = await fetchData(`/users?${params.toString()}`)
         if (allUsersData.success && allUsersData.data) {
           const allUsers = Array.isArray(allUsersData.data) ? allUsersData.data : []
-          
+
           // Update total count from meta if available
           if (allUsersData.total !== undefined) {
             setTotalCount(allUsersData.total)
@@ -104,7 +104,7 @@ function AllUsers() {
           } else {
             setTotalCount(allUsers.length)
           }
-          
+
           // Map all users to a unified format
           const mappedUsers = allUsers.map(user => ({
             id: user.id || user._id,
@@ -112,18 +112,19 @@ function AllUsers() {
             email: user.email || 'N/A',
             phone: user.phone || 'N/A',
             company: user.company || '',
-            joinDate: user.createdAt 
+            joinDate: user.createdAt
               ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
               : 'N/A',
             status: user.isActive !== false ? 'Active' : 'Inactive',
             isActive: user.isActive !== false,
             isUserActivated: user.isUserActivated,
             type: user.role,
-            address: user.address 
-              ? (typeof user.address === 'string' 
-                ? user.address 
+            address: user.address
+              ? (typeof user.address === 'string'
+                ? user.address
                 : `${user.address.line1 || ''} ${user.address.city || ''} ${user.address.state || ''}`.trim())
-              : 'N/A'
+              : 'N/A',
+            profilePicture: user.profilePicture || user.image || null
           }))
 
           setAllUsers(mappedUsers)
@@ -349,33 +350,46 @@ function AllUsers() {
       },
     },
     {
+      accessorKey: "profilePicture",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Profile" />
+      ),
+      cell: ({ row }) => {
+        const item = row.original
+        let avatarText = ''
+        if (item.type === 'supplier') {
+          avatarText = (item.company && item.company.trim())
+            ? item.company.charAt(0).toUpperCase()
+            : item.name.charAt(0).toUpperCase()
+        } else if (item.type === 'broker') {
+          avatarText = (item.company && item.company.trim())
+            ? item.company.charAt(0).toUpperCase()
+            : item.name.charAt(0).toUpperCase()
+        } else {
+          avatarText = item.name.charAt(0).toUpperCase()
+        }
+
+        return (
+          <div className="user-avatar-all">
+            {item.profilePicture ? (
+              <img src={item.profilePicture} alt={item.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              avatarText
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+    },
+    {
       accessorKey: "name",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Name" />
       ),
       cell: ({ row }) => {
         const item = row.original
-        // For suppliers, prefer company name for avatar, otherwise use name
-        // For brokers, prefer company name if available, otherwise use name
-        // For users, use name
-        let avatarText = ''
-        if (item.type === 'supplier') {
-          avatarText = (item.company && item.company.trim()) 
-            ? item.company.charAt(0).toUpperCase() 
-            : item.name.charAt(0).toUpperCase()
-        } else if (item.type === 'broker') {
-          avatarText = (item.company && item.company.trim()) 
-            ? item.company.charAt(0).toUpperCase() 
-            : item.name.charAt(0).toUpperCase()
-        } else {
-          avatarText = item.name.charAt(0).toUpperCase()
-        }
-        
         return (
           <div className="user-cell-all">
-            {/* <div className={`user-avatar-all avatar-${item.type}`}>
-              {avatarText}
-            </div> */}
             <div>
               <div className="user-name-all">{item.name}</div>
               {item.company && item.company !== item.name && (
@@ -437,7 +451,7 @@ function AllUsers() {
         if (!isActivated) {
           // Not activated - show Activate and Reject options
           return (
-            <div 
+            <div
               onClick={(e) => e.stopPropagation()}
               style={{ display: 'flex', gap: '8px' }}
             >
@@ -483,7 +497,7 @@ function AllUsers() {
           if (isActive) {
             // Active - show Deactivate option
             return (
-              <div 
+              <div
                 onClick={(e) => e.stopPropagation()}
                 style={{ display: 'flex', gap: '8px' }}
               >
@@ -511,12 +525,12 @@ function AllUsers() {
             )
           } else {
             // Inactive - show Reactivate option
-        return (
-              <div 
+            return (
+              <div
                 onClick={(e) => e.stopPropagation()}
                 style={{ display: 'flex', gap: '8px' }}
               >
-          <button
+                <button
                   type="button"
                   className="btn btn-sm btn-primary"
                   onClick={async (e) => {
@@ -535,9 +549,9 @@ function AllUsers() {
                 >
                   <RotateCw size={14} style={{ marginRight: '4px' }} />
                   Reactivate
-          </button>
+                </button>
               </div>
-        )
+            )
           }
         }
       },
@@ -611,8 +625,8 @@ function AllUsers() {
       {/* Search and Filters */}
       <div className="card filters-section">
         <div className="filters-grid">
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="Search by name, email, phone..."
             className="search-input-full"
             value={searchQuery}
@@ -621,7 +635,7 @@ function AllUsers() {
               setPage(1) // Reset to first page on search
             }}
           />
-          <select 
+          <select
             className="filter-select"
             value={typeFilter}
             onChange={(e) => {
@@ -635,7 +649,7 @@ function AllUsers() {
             <option value="supplier">Suppliers</option>
           </select>
           {typeFilter === 'buyer' && (
-            <select 
+            <select
               className="filter-select"
               value={isActiveFilter}
               onChange={(e) => {
@@ -648,8 +662,8 @@ function AllUsers() {
               <option value="false">Inactive</option>
             </select>
           )}
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="Search by address..."
             className="filter-select"
             value={addressFilter}
@@ -658,8 +672,8 @@ function AllUsers() {
               setPage(1)
             }}
           />
-          <button 
-            className="btn btn-outline clear-filters-btn" 
+          <button
+            className="btn btn-outline clear-filters-btn"
             onClick={() => {
               setSearchQuery('')
               setTypeFilter('all')
@@ -682,8 +696,8 @@ function AllUsers() {
         ) : error ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--error-color, #e74c3c)' }}>
             <p>{error}</p>
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               onClick={() => window.location.reload()}
               style={{ marginTop: '10px' }}
             >
@@ -714,9 +728,9 @@ function AllUsers() {
                             {header.isPlaceholder
                               ? null
                               : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext()
-                                )}
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
                           </TableHead>
                         )
                       })}
@@ -746,8 +760,8 @@ function AllUsers() {
                         colSpan={columns.length}
                         className="h-24 text-center"
                       >
-                        {allUsers.length === 0 
-                          ? 'No users found.' 
+                        {allUsers.length === 0
+                          ? 'No users found.'
                           : 'No results found matching your search criteria'}
                       </TableCell>
                     </TableRow>

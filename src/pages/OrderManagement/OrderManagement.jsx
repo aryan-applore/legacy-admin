@@ -73,7 +73,7 @@ function OrderManagement() {
         }
         if (usersRes.success && usersRes.data) {
           // Filter suppliers from unified users response
-          const suppliersData = usersRes.data.filter(user => 
+          const suppliersData = usersRes.data.filter(user =>
             user.type === 'supplier' || user.role === 'supplier'
           )
           setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
@@ -95,22 +95,22 @@ function OrderManagement() {
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
       const searchLower = searchQuery.toLowerCase()
-      const matchesSearch = 
+      const matchesSearch =
         order.orderNumber?.toLowerCase().includes(searchLower) ||
         order.notes?.toLowerCase().includes(searchLower)
 
       const supplierId = order.supplierId?._id || order.supplierId
       const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
       const supplierName = supplier?.company || supplier?.name || 'N/A'
-      const matchesSupplier = 
+      const matchesSupplier =
         filterSupplier === 'All Suppliers' || supplierName === filterSupplier
 
-      const matchesStatus = 
-        filterStatus === 'All Status' || 
+      const matchesStatus =
+        filterStatus === 'All Status' ||
         order.status === filterStatus.toLowerCase()
 
-      const matchesPaymentStatus = 
-        filterPaymentStatus === 'All Payment Status' || 
+      const matchesPaymentStatus =
+        filterPaymentStatus === 'All Payment Status' ||
         order.paymentStatus === filterPaymentStatus.toLowerCase()
 
       return matchesSearch && matchesSupplier && matchesStatus && matchesPaymentStatus
@@ -141,22 +141,22 @@ function OrderManagement() {
   const handleSaveOrder = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
-    
+
     // Get the items from the hidden input which is already in JSON format
     const items = selectedOrder?.items || []
-    
+
     if (items.length === 0) {
       showNotification('Please add at least one item to the order', 'error')
       return
     }
-    
+
     // Validate all items have required fields
     const invalidItems = items.some(item => !item.productId || !item.quantity || item.quantity <= 0 || !item.unitPrice || item.unitPrice < 0)
     if (invalidItems) {
       showNotification('Please fill all required fields for all items', 'error')
       return
     }
-    
+
     // Format the order data
     const orderData = {
       supplierId: formData.get('supplierId'),
@@ -175,12 +175,12 @@ function OrderManagement() {
 
     const endpoint = selectedOrder ? `/supplier-orders/${selectedOrder._id || selectedOrder.id}` : '/supplier-orders'
     const method = selectedOrder ? 'PUT' : 'POST'
-    
+
     const result = await fetchData(endpoint, {
       method,
       body: JSON.stringify(orderData)
     })
-    
+
     if (result.success) {
       showNotification(selectedOrder ? 'Order updated successfully!' : 'Order created successfully!', 'success')
       const ordersRes = await fetchData('/supplier-orders')
@@ -215,7 +215,7 @@ function OrderManagement() {
       method: 'PUT',
       body: JSON.stringify({ status, cancellationReason })
     })
-    
+
     if (result.success) {
       showNotification('Order status updated successfully!', 'success')
       const ordersRes = await fetchData('/supplier-orders')
@@ -231,7 +231,7 @@ function OrderManagement() {
     e.preventDefault()
     const formData = new FormData(e.target)
     const receivedQuantities = {}
-    
+
     const itemInputs = formData.getAll('receivedQuantity')
     const itemIds = formData.getAll('itemId')
     itemIds.forEach((id, index) => {
@@ -245,7 +245,7 @@ function OrderManagement() {
         receivedQuantities
       })
     })
-    
+
     if (result.success) {
       showNotification('Delivery updated successfully!', 'success')
       const ordersRes = await fetchData('/supplier-orders')
@@ -369,7 +369,7 @@ function OrderManagement() {
                 Update Delivery
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => handleDeleteOrder(order._id || order.id)}
                 className="text-red-600"
               >
@@ -467,7 +467,7 @@ function OrderManagement() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input-full"
           />
-          <select 
+          <select
             className="filter-select"
             value={filterSupplier}
             onChange={(e) => setFilterSupplier(e.target.value)}
@@ -477,7 +477,7 @@ function OrderManagement() {
               <option key={s._id || s.id}>{s.company || s.name}</option>
             ))}
           </select>
-          <select 
+          <select
             className="filter-select"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
@@ -489,7 +489,7 @@ function OrderManagement() {
               </option>
             ))}
           </select>
-          <select 
+          <select
             className="filter-select"
             value={filterPaymentStatus}
             onChange={(e) => setFilterPaymentStatus(e.target.value)}
@@ -527,9 +527,9 @@ function OrderManagement() {
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -617,8 +617,8 @@ function OrderManagement() {
                 <div className="form-group">
                   <div className="flex justify-between items-center mb-3">
                     <label>Order Items *</label>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="btn btn-sm btn-outline"
                       onClick={() => {
                         const newItem = {
@@ -637,13 +637,13 @@ function OrderManagement() {
                       + Add Item
                     </button>
                   </div>
-                  
+
                   <div className="space-y-4">
                     {selectedOrder?.items?.map((item, index) => {
                       const product = products.find(p => (p._id || p.id) === (item.productId?._id || item.productId));
                       return (
                         <div key={index} className="item-card relative p-4">
-                          <button 
+                          <button
                             type="button"
                             className="absolute top-2 right-2 text-red-500 hover:text-red-700"
                             onClick={() => {
@@ -655,7 +655,7 @@ function OrderManagement() {
                           >
                             ×
                           </button>
-                          
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="form-group">
                               <label>Product *</label>
@@ -684,7 +684,7 @@ function OrderManagement() {
                                 ))}
                               </select>
                             </div>
-                            
+
                             <div className="form-group">
                               <label>Quantity *</label>
                               <input
@@ -706,16 +706,16 @@ function OrderManagement() {
                                 required
                               />
                             </div>
-                            
+
                             <div className="form-group">
                               <label>Unit Price *</label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                              <div className="input-wrapper-relative">
+                                <span className="input-prefix-icon">₹</span>
                                 <input
                                   type="number"
                                   min="0"
                                   step="0.01"
-                                  className="w-full pl-8"
+                                  className="w-full input-with-icon"
                                   value={item.unitPrice || ''}
                                   onChange={(e) => {
                                     const newItems = [...selectedOrder.items];
@@ -732,7 +732,7 @@ function OrderManagement() {
                                 />
                               </div>
                             </div>
-                            
+
                             <div className="form-group">
                               <label>Received Quantity</label>
                               <input
@@ -753,7 +753,7 @@ function OrderManagement() {
                                 }}
                               />
                             </div>
-                            
+
                             <div className="form-group md:col-span-2">
                               <label>Notes</label>
                               <input
@@ -778,14 +778,14 @@ function OrderManagement() {
                         </div>
                       );
                     })}
-                    
+
                     {(!selectedOrder?.items || selectedOrder.items.length === 0) && (
                       <div className="text-center py-8 border-2 border-dashed rounded-lg text-muted-foreground">
                         <p>No items added yet. Click "Add Item" to get started.</p>
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Hidden input to maintain form submission compatibility */}
                   <input
                     type="hidden"
@@ -850,7 +850,7 @@ function OrderManagement() {
                   const isFullyReceived = item.receivedQuantity >= item.quantity;
                   const isPartiallyReceived = item.receivedQuantity > 0 && item.receivedQuantity < item.quantity;
                   const status = isFullyReceived ? 'completed' : (isPartiallyReceived ? 'partial' : 'pending');
-                  
+
                   return (
                     <div key={index} className="item-card">
                       <div className="item-card-header">
@@ -907,10 +907,10 @@ function OrderManagement() {
               <form onSubmit={handleSaveDeliveryUpdate}>
                 <div className="form-group">
                   <label>Actual Delivery Date</label>
-                  <input 
-                    type="date" 
-                    name="actualDelivery" 
-                    defaultValue={selectedOrder?.actualDelivery ? new Date(selectedOrder.actualDelivery).toISOString().split('T')[0] : ''} 
+                  <input
+                    type="date"
+                    name="actualDelivery"
+                    defaultValue={selectedOrder?.actualDelivery ? new Date(selectedOrder.actualDelivery).toISOString().split('T')[0] : ''}
                   />
                 </div>
                 <div className="form-group">
@@ -923,10 +923,10 @@ function OrderManagement() {
                         <div style={{ marginBottom: '8px' }}>
                           <strong>{product?.name || 'Product'}</strong> - Ordered: {item.quantity}
                         </div>
-                        <input 
-                          type="number" 
-                          name="receivedQuantity" 
-                          min="0" 
+                        <input
+                          type="number"
+                          name="receivedQuantity"
+                          min="0"
                           max={item.quantity}
                           defaultValue={item.receivedQuantity || 0}
                           placeholder="Received quantity"

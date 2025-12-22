@@ -45,6 +45,11 @@ function SupplierManagement() {
   const [notification, showNotification] = useNotification()
   const { fetchData } = useApiFetch()
 
+  // Profile Image State
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+
   // Form Validation States
   const [formErrors, setFormErrors] = useState({})
 
@@ -156,7 +161,8 @@ function SupplierManagement() {
       contactPerson: supplier.name || supplier.contactPerson || '',
       email: supplier.email || '',
       phone: supplier.phone || '',
-      address: supplier.address || ''
+      address: supplier.address || '',
+      profilePicture: supplier.image || supplier.profilePicture || null
     }
   }
 
@@ -164,7 +170,7 @@ function SupplierManagement() {
   const filteredSuppliers = useMemo(() => {
     return suppliers.map(normalizeSupplier).filter(supplier => {
       const searchLower = searchQuery.toLowerCase()
-      const matchesSearch = 
+      const matchesSearch =
         supplier.companyName?.toLowerCase().includes(searchLower) ||
         supplier.email?.toLowerCase().includes(searchLower) ||
         supplier.phone?.includes(searchQuery) ||
@@ -185,7 +191,7 @@ function SupplierManagement() {
   // Validation Functions
   const validateSupplierForm = (formData, isNewSupplier) => {
     const errors = {}
-    
+
     // Company Name Validation
     const companyName = formData.get('companyName').trim()
     if (!companyName) {
@@ -193,7 +199,7 @@ function SupplierManagement() {
     } else if (companyName.length < 3) {
       errors.companyName = 'Company name must be at least 3 characters long'
     }
-    
+
     // Contact Person Validation
     const contactPerson = formData.get('contactPerson').trim()
     if (!contactPerson) {
@@ -203,7 +209,7 @@ function SupplierManagement() {
     } else if (!/^[a-zA-Z\s]+$/.test(contactPerson)) {
       errors.contactPerson = 'Contact person can only contain letters and spaces'
     }
-    
+
     // Email Validation
     const email = formData.get('email').trim()
     if (!email) {
@@ -212,15 +218,15 @@ function SupplierManagement() {
       errors.email = 'Please enter a valid email address'
     } else {
       // Check for duplicate email
-      const isDuplicate = suppliers.some(s => 
-        s.email.toLowerCase() === email.toLowerCase() && 
+      const isDuplicate = suppliers.some(s =>
+        s.email.toLowerCase() === email.toLowerCase() &&
         (!selectedSupplier || s.id !== selectedSupplier.id)
       )
       if (isDuplicate) {
         errors.email = 'This email is already registered'
       }
     }
-    
+
     // Phone Validation
     const phone = formData.get('phone').trim()
     if (!phone) {
@@ -228,15 +234,15 @@ function SupplierManagement() {
     } else if (!/^[6-9]\d{9}$/.test(phone)) {
       errors.phone = 'Please enter a valid 10-digit Indian mobile number'
     }
-    
+
     // Address Validation (optional)
     const address = formData.get('address')?.trim() || ''
-    
+
     // Password Validation (only for new suppliers)
     if (isNewSupplier) {
       const password = formData.get('password')
       const confirmPassword = formData.get('confirmPassword')
-      
+
       if (!password) {
         errors.password = 'Password is required'
       } else if (password.length < 8) {
@@ -244,60 +250,105 @@ function SupplierManagement() {
       } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
         errors.password = 'Password must contain uppercase, lowercase, and number'
       }
-      
+
       if (!confirmPassword) {
         errors.confirmPassword = 'Please confirm your password'
       } else if (password !== confirmPassword) {
         errors.confirmPassword = 'Passwords do not match'
       }
     }
-    
+
     return errors
+  }
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showNotification('Image size should be less than 5MB', 'error')
+        return
+      }
+      setImageFile(file)
+      setImagePreview(URL.createObjectURL(file))
+    }
   }
 
   const handleSaveSupplier = async (e) => {
     e.preventDefault()
+    setUploadingImage(true)
     const formData = new FormData(e.target)
-    
+
     // Validate form
     const errors = validateSupplierForm(formData, !selectedSupplier)
-    
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
       showNotification('Please fix the validation errors', 'error')
+      setUploadingImage(false)
       return
     }
-    
+
     // Clear errors if validation passes
     setFormErrors({})
-    
-    // Map form data to API format
-    const supplierData = {
-      name: formData.get('contactPerson').trim(),
-      email: formData.get('email').trim().toLowerCase(),
-      phone: formData.get('phone').trim(),
-      company: formData.get('companyName').trim(),
-      address: formData.get('address').trim(),
-      password: selectedSupplier ? undefined : '12345678' // Default password for new suppliers
-    }
 
-    const endpoint = selectedSupplier ? `/suppliers/${selectedSupplier._id || selectedSupplier.id}` : '/suppliers'
-    const method = selectedSupplier ? 'PUT' : 'POST'
-    
-    const result = await fetchData(endpoint, {
-      method,
-      body: JSON.stringify(supplierData)
-    })
-    
-    if (result.success) {
-      showNotification(selectedSupplier ? 'Supplier updated successfully!' : 'Supplier created successfully!', 'success')
-      // Reload suppliers from API
-      await fetchSuppliers()
-      setShowSupplierModal(false)
-      setSelectedSupplier(null)
-      setFormErrors({})
-    } else {
-      showNotification(result.error || 'Failed to save supplier', 'error')
+    try {
+      let imageUrl = selectedSupplier?.profilePicture || ''
+
+      // 1. Upload image if a new file is selected
+      if (imageFile && imageFile instanceof File) {
+        const uploadFormData = new FormData()
+        uploadFormData.append('file', imageFile)
+
+        const uploadRes = await fetchData('/upload/file', {
+          method: 'POST',
+          body: uploadFormData
+        })
+
+        if (uploadRes.success) {
+          imageUrl = uploadRes.data?.url || uploadRes.data
+        } else {
+          showNotification('Failed to upload image: ' + (uploadRes.error || 'Unknown error'), 'error')
+          setUploadingImage(false)
+          return
+        }
+      }
+
+      // Map form data to API format
+      const supplierData = {
+        name: formData.get('contactPerson').trim(),
+        email: formData.get('email').trim().toLowerCase(),
+        phone: formData.get('phone').trim(),
+        company: formData.get('companyName').trim(),
+        address: formData.get('address').trim(),
+        profilePicture: imageUrl,
+        password: selectedSupplier ? undefined : '12345678' // Default password for new suppliers
+      }
+
+      const endpoint = selectedSupplier ? `/suppliers/${selectedSupplier._id || selectedSupplier.id}` : '/suppliers'
+      const method = selectedSupplier ? 'PUT' : 'POST'
+
+      const result = await fetchData(endpoint, {
+        method,
+        body: JSON.stringify(supplierData)
+      })
+
+      if (result.success) {
+        showNotification(selectedSupplier ? 'Supplier updated successfully!' : 'Supplier created successfully!', 'success')
+        // Reload suppliers from API
+        await fetchSuppliers()
+        setShowSupplierModal(false)
+        setSelectedSupplier(null)
+        setFormErrors({})
+        setImageFile(null)
+        setImagePreview(null)
+      } else {
+        showNotification(result.error || 'Failed to save supplier', 'error')
+      }
+    } catch (err) {
+      console.error('Error saving supplier:', err)
+      showNotification('Error saving supplier: ' + err.message, 'error')
+    } finally {
+      setUploadingImage(false)
     }
   }
 
@@ -308,6 +359,8 @@ function SupplierManagement() {
 
   const handleEditSupplier = (supplier) => {
     setSelectedSupplier(supplier)
+    setImagePreview(supplier.profilePicture || null)
+    setImageFile(null)
     setShowSupplierModal(true)
   }
 
@@ -384,7 +437,7 @@ function SupplierManagement() {
     const formData = new FormData(e.target)
     const documentType = formData.get('documentType')
     const file = formData.get('document')
-    
+
     if (file && file.size > 0) {
       const documentData = {
         id: Date.now(),
@@ -397,18 +450,18 @@ function SupplierManagement() {
         uploadDate: new Date().toLocaleString(),
         verified: false
       }
-      
+
       setSupplierDocuments(prev => ({
         ...prev,
         [selectedSupplier.id]: [...(prev[selectedSupplier.id] || []), documentData]
       }))
-      
-      setSuppliers(suppliers.map(s => 
-        s.id === selectedSupplier.id 
+
+      setSuppliers(suppliers.map(s =>
+        s.id === selectedSupplier.id
           ? { ...s, documents: (s.documents || 0) + 1 }
           : s
       ))
-      
+
       showNotification(`${documentType} uploaded successfully!`, 'success')
       e.target.reset()
     }
@@ -422,12 +475,12 @@ function SupplierManagement() {
         doc.id === docId ? { ...doc, verified: true } : doc
       )
     }
-    
+
     setSupplierDocuments(updatedDocs)
-    
+
     // Check if all documents are now verified
     const allVerified = updatedDocs[selectedSupplier.id].every(doc => doc.verified)
-    
+
     // If all documents are verified, update supplier verification status
     if (allVerified && updatedDocs[selectedSupplier.id].length > 0) {
       const updatedSupplier = {
@@ -435,14 +488,14 @@ function SupplierManagement() {
         verificationStatus: 'Approved',
         status: selectedSupplier.status === 'Inactive' ? 'Active' : selectedSupplier.status
       }
-      
-      setSuppliers(suppliers.map(s => 
+
+      setSuppliers(suppliers.map(s =>
         s.id === selectedSupplier.id ? updatedSupplier : s
       ))
-      
+
       // Update the selected supplier state to reflect changes in the modal
       setSelectedSupplier(updatedSupplier)
-      
+
       showNotification('All documents verified! Supplier approved.', 'success')
     } else {
       showNotification('Document verified successfully!', 'success')
@@ -452,7 +505,7 @@ function SupplierManagement() {
   const handleDownloadDocument = (documentData) => {
     try {
       showNotification(`Downloading "${documentData.name}"...`, 'info')
-      
+
       if (documentData.file) {
         const url = window.URL.createObjectURL(documentData.file)
         const link = document.createElement('a')
@@ -477,10 +530,10 @@ function SupplierManagement() {
 
   const handleSaveBrokerAssignments = (e) => {
     e.preventDefault()
-    
+
     const brokerCheckboxes = document.querySelectorAll('input[name="brokers"]:checked')
     const selectedBrokers = Array.from(brokerCheckboxes).map(cb => parseInt(cb.value))
-    
+
     setSupplierBrokerAssignments(prev => ({
       ...prev,
       [selectedSupplier.id]: selectedBrokers
@@ -501,7 +554,7 @@ function SupplierManagement() {
   const handleViewPerformance = (supplier) => {
     setSelectedSupplier(supplier)
     setShowPerformanceModal(true)
-    
+
     // Initialize performance data if not exists
     if (!supplierPerformance[supplier.id]) {
       setSupplierPerformance(prev => ({
@@ -534,7 +587,7 @@ function SupplierManagement() {
     const totalOrders = supplierOrders.length
     const completedOrders = supplierOrders.filter(o => o.status === 'delivered').length
     const cancelledOrders = supplierOrders.filter(o => o.status === 'cancelled').length
-    
+
     const deliveredOrders = supplierOrders.filter(o => o.status === 'delivered' && o.expectedDelivery && o.actualDelivery)
     const onTimeDeliveries = deliveredOrders.filter(o => {
       const expected = new Date(o.expectedDelivery)
@@ -542,10 +595,10 @@ function SupplierManagement() {
       return actual <= expected
     }).length
     const lateDeliveries = deliveredOrders.length - onTimeDeliveries
-    
+
     const deliverySuccessRate = totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0
     const onTimeRate = deliveredOrders.length > 0 ? Math.round((onTimeDeliveries / deliveredOrders.length) * 100) : 0
-    
+
     // Calculate average delivery time
     let totalDays = 0
     let count = 0
@@ -559,7 +612,7 @@ function SupplierManagement() {
       }
     })
     const averageDeliveryTime = count > 0 ? Math.round(totalDays / count) : 0
-    
+
     // Recent orders (last 10)
     const recentOrders = supplierOrders
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -568,15 +621,15 @@ function SupplierManagement() {
         orderId: order.orderNumber,
         orderDate: new Date(order.createdAt).toLocaleDateString(),
         deliveryDate: order.actualDelivery ? new Date(order.actualDelivery).toLocaleDateString() : null,
-        deliveryTime: order.createdAt && order.actualDelivery 
+        deliveryTime: order.createdAt && order.actualDelivery
           ? Math.round((new Date(order.actualDelivery) - new Date(order.createdAt)) / (1000 * 60 * 60 * 24))
           : null,
         status: order.status.charAt(0).toUpperCase() + order.status.slice(1).replace('_', ' '),
-        onTime: order.expectedDelivery && order.actualDelivery 
+        onTime: order.expectedDelivery && order.actualDelivery
           ? new Date(order.actualDelivery) <= new Date(order.expectedDelivery)
           : undefined
       }))
-    
+
     return {
       totalOrders,
       completedOrders,
@@ -601,6 +654,25 @@ function SupplierManagement() {
   // Define columns
   const columns = useMemo(() => [
     {
+      accessorKey: "profilePicture",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Profile" />
+      ),
+      cell: ({ row }) => {
+        const supplier = row.original
+        return (
+          <div className="supplier-avatar">
+            {supplier.profilePicture ? (
+              <img src={supplier.profilePicture} alt={supplier.companyName} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              (supplier.companyName || supplier.company || 'S').charAt(0).toUpperCase()
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+    },
+    {
       accessorKey: "companyName",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Company" />
@@ -608,14 +680,9 @@ function SupplierManagement() {
       cell: ({ row }) => {
         const supplier = row.original
         return (
-          <div className="supplier-cell">
-            <div className="supplier-avatar">
-              {(supplier.companyName || supplier.company || 'S').charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div className="supplier-name">{supplier.companyName || supplier.company || 'N/A'}</div>
-              <div className="supplier-meta">{supplier.email || 'N/A'}</div>
-            </div>
+          <div>
+            <div className="supplier-name">{supplier.companyName || supplier.company || 'N/A'}</div>
+            <div className="supplier-meta">{supplier.email || 'N/A'}</div>
           </div>
         )
       },
@@ -628,10 +695,10 @@ function SupplierManagement() {
       cell: ({ row }) => {
         const supplier = row.original
         return (
-            <div>
-              <div className="contact-name">{supplier.contactPerson || supplier.name || 'N/A'}</div>
-              <div className="supplier-meta">{supplier.phone || 'N/A'}</div>
-            </div>
+          <div>
+            <div className="contact-name">{supplier.contactPerson || supplier.name || 'N/A'}</div>
+            <div className="supplier-meta">{supplier.phone || 'N/A'}</div>
+          </div>
         )
       },
     },
@@ -736,9 +803,9 @@ function SupplierManagement() {
       {/* Filters */}
       <div className="card filters-section">
         <div className="filters-grid">
-          <input 
-            type="text" 
-            placeholder="Search by company, contact, email, phone, address..." 
+          <input
+            type="text"
+            placeholder="Search by company, contact, email, phone, address..."
             className="search-input-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -773,9 +840,9 @@ function SupplierManagement() {
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
                       </TableHead>
                     )
                   })}
@@ -823,49 +890,53 @@ function SupplierManagement() {
           </div>
         ) : (
           filteredSuppliers.map((supplier) => (
-          <div key={supplier.id} className="supplier-card-mobile">
-            <div className="supplier-card-header">
-              <div className="supplier-cell">
-                <div className="supplier-avatar">
-                  {supplier.companyName.charAt(0)}
+            <div key={supplier.id} className="supplier-card-mobile">
+              <div className="supplier-card-header">
+                <div className="supplier-cell">
+                  <div className="supplier-avatar">
+                    {supplier.profilePicture ? (
+                      <img src={supplier.profilePicture} alt={supplier.companyName} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    ) : (
+                      supplier.companyName.charAt(0)
+                    )}
+                  </div>
+                  <div>
+                    <div className="supplier-name">{supplier.companyName}</div>
+                    <div className="supplier-meta">{supplier.email}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="supplier-name">{supplier.companyName}</div>
-                  <div className="supplier-meta">{supplier.email}</div>
-                </div>
               </div>
-            </div>
-            
-            <div className="supplier-card-body">
-              <div className="card-info-row">
-                <span className="card-label">👤 Contact:</span>
-                <span>{supplier.contactPerson || supplier.name || 'N/A'}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📞 Phone:</span>
-                <span>{supplier.phone || 'N/A'}</span>
-              </div>
-              <div className="card-info-row">
-                <span className="card-label">📍 Address:</span>
-                <span>{supplier.address || 'N/A'}</span>
-              </div>
-            </div>
 
-            <div className="supplier-card-actions">
-              <button className="btn btn-outline" onClick={() => handleViewDetails(supplier)}>👁️ View</button>
-              <button className="btn btn-primary" onClick={() => handleEditSupplier(supplier)}>✏️ Edit</button>
+              <div className="supplier-card-body">
+                <div className="card-info-row">
+                  <span className="card-label">👤 Contact:</span>
+                  <span>{supplier.contactPerson || supplier.name || 'N/A'}</span>
+                </div>
+                <div className="card-info-row">
+                  <span className="card-label">📞 Phone:</span>
+                  <span>{supplier.phone || 'N/A'}</span>
+                </div>
+                <div className="card-info-row">
+                  <span className="card-label">📍 Address:</span>
+                  <span>{supplier.address || 'N/A'}</span>
+                </div>
+              </div>
+
+              <div className="supplier-card-actions">
+                <button className="btn btn-outline" onClick={() => handleViewDetails(supplier)}>👁️ View</button>
+                <button className="btn btn-primary" onClick={() => handleEditSupplier(supplier)}>✏️ Edit</button>
+              </div>
+
+              <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
+                <button className="btn btn-outline" onClick={() => handleManageBrokers(supplier)}>🤝 Brokers</button>
+                <button className="btn btn-outline" onClick={() => handleViewPerformance(supplier)}>📊 Performance</button>
+              </div>
+
+              <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
+                <button className="btn btn-outline" onClick={() => handleViewFulfillment(supplier)}>🚚 Fulfillment</button>
+                <button className="btn btn-outline" onClick={() => handleResetPassword(supplier)}>🔑 Reset Password</button>
+              </div>
             </div>
-            
-            <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
-              <button className="btn btn-outline" onClick={() => handleManageBrokers(supplier)}>🤝 Brokers</button>
-              <button className="btn btn-outline" onClick={() => handleViewPerformance(supplier)}>📊 Performance</button>
-            </div>
-            
-            <div className="supplier-card-actions" style={{ marginTop: '8px' }}>
-              <button className="btn btn-outline" onClick={() => handleViewFulfillment(supplier)}>🚚 Fulfillment</button>
-              <button className="btn btn-outline" onClick={() => handleResetPassword(supplier)}>🔑 Reset Password</button>
-            </div>
-          </div>
           ))
         )}
       </div>
@@ -961,30 +1032,56 @@ function SupplierManagement() {
             <div className="modal-body">
               <form className="supplier-form" onSubmit={handleSaveSupplier}>
                 <div className="form-row">
+                  <div className="form-group full-width" style={{ gridColumn: '1 / -1' }}>
+                    <label>Profile Image (Optional)</label>
+                    <div className="image-upload-container">
+                      <div className="image-preview-large">
+                        {imagePreview ? (
+                          <img src={imagePreview} alt="Preview" />
+                        ) : (
+                          <div className="no-image">
+                            <span style={{ fontSize: '40px' }}>🏢</span>
+                            <span>No image</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="image-upload-controls">
+                        <Input
+                          type="file"
+                          accept=".png,.jpg,.jpeg"
+                          onChange={handleImageChange}
+                          className="file-input"
+                        />
+                        <p className="upload-tip">PNG, JPG or JPEG (Max 5MB)</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="form-row">
                   <div className="form-group">
                     <label>Company Name *</label>
-                    <input 
-                      type="text" 
-                      name="companyName" 
-                      placeholder="Company name" 
+                    <input
+                      type="text"
+                      name="companyName"
+                      placeholder="Company name"
                       defaultValue={selectedSupplier?.companyName}
                       minLength="3"
-                      required 
+                      required
                       className={formErrors.companyName ? 'error' : ''}
                     />
                     {formErrors.companyName && <span className="error-message">{formErrors.companyName}</span>}
                   </div>
                   <div className="form-group">
                     <label>Contact Person *</label>
-                    <input 
-                      type="text" 
-                      name="contactPerson" 
-                      placeholder="Contact person" 
+                    <input
+                      type="text"
+                      name="contactPerson"
+                      placeholder="Contact person"
                       defaultValue={selectedSupplier?.contactPerson}
                       minLength="3"
                       pattern="[a-zA-Z\s]+"
                       title="Contact person can only contain letters and spaces"
-                      required 
+                      required
                       className={formErrors.contactPerson ? 'error' : ''}
                     />
                     {formErrors.contactPerson && <span className="error-message">{formErrors.contactPerson}</span>}
@@ -994,29 +1091,29 @@ function SupplierManagement() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Email *</label>
-                    <input 
-                      type="email" 
-                      name="email" 
-                      placeholder="company@example.com" 
+                    <input
+                      type="email"
+                      name="email"
+                      placeholder="company@example.com"
                       defaultValue={selectedSupplier?.email}
                       pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
                       title="Please enter a valid email address"
-                      required 
+                      required
                       className={formErrors.email ? 'error' : ''}
                     />
                     {formErrors.email && <span className="error-message">{formErrors.email}</span>}
                   </div>
                   <div className="form-group">
                     <label>Phone *</label>
-                    <input 
-                      type="tel" 
-                      name="phone" 
-                      placeholder="Phone number" 
+                    <input
+                      type="tel"
+                      name="phone"
+                      placeholder="Phone number"
                       defaultValue={selectedSupplier?.phone}
                       pattern="[6-9][0-9]{9}"
                       maxLength="10"
                       title="Please enter a valid 10-digit Indian mobile number starting with 6-9"
-                      required 
+                      required
                       className={formErrors.phone ? 'error' : ''}
                     />
                     {formErrors.phone && <span className="error-message">{formErrors.phone}</span>}
@@ -1032,13 +1129,13 @@ function SupplierManagement() {
                   <div className="form-row">
                     <div className="form-group">
                       <label>Password *</label>
-                      <input 
-                        type="password" 
-                        name="password" 
+                      <input
+                        type="password"
+                        name="password"
                         placeholder="Password"
                         minLength="8"
                         title="Password must be at least 8 characters with uppercase, lowercase, and number"
-                        required 
+                        required
                         className={formErrors.password ? 'error' : ''}
                       />
                       {formErrors.password && <span className="error-message">{formErrors.password}</span>}
@@ -1048,11 +1145,11 @@ function SupplierManagement() {
                     </div>
                     <div className="form-group">
                       <label>Confirm Password *</label>
-                      <input 
-                        type="password" 
-                        name="confirmPassword" 
+                      <input
+                        type="password"
+                        name="confirmPassword"
                         placeholder="Confirm password"
-                        required 
+                        required
                         className={formErrors.confirmPassword ? 'error' : ''}
                       />
                       {formErrors.confirmPassword && <span className="error-message">{formErrors.confirmPassword}</span>}
@@ -1061,8 +1158,10 @@ function SupplierManagement() {
                 )}
 
                 <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowSupplierModal(false); setSelectedSupplier(null); setFormErrors({}); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">{selectedSupplier ? 'Update' : 'Create'}</button>
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowSupplierModal(false); setSelectedSupplier(null); setFormErrors({}); setImageFile(null); setImagePreview(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={uploadingImage}>
+                    {uploadingImage ? 'Uploading Image...' : (selectedSupplier ? 'Update' : 'Create')}
+                  </button>
                 </div>
               </form>
             </div>
@@ -1170,8 +1269,8 @@ function SupplierManagement() {
                     <div className="assignment-checkboxes">
                       {availableBrokers.map(broker => (
                         <label key={broker.id} className="assignment-checkbox-label">
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             name="brokers"
                             value={broker.id}
                             defaultChecked={supplierBrokerAssignments[selectedSupplier.id]?.includes(broker.id)}
@@ -1260,11 +1359,10 @@ function SupplierManagement() {
                         <div className="document-name">{bid.projectName}</div>
                         <div className="document-meta">{bid.date} • ₹{bid.amount.toLocaleString()}</div>
                       </div>
-                      <span className={`status-badge ${
-                        bid.status === 'Won' ? 'status-success' : 
-                        bid.status === 'Lost' ? 'status-error' : 
-                        'status-warning'
-                      }`}>
+                      <span className={`status-badge ${bid.status === 'Won' ? 'status-success' :
+                        bid.status === 'Lost' ? 'status-error' :
+                          'status-warning'
+                        }`}>
                         {bid.status}
                       </span>
                     </div>
@@ -1305,69 +1403,68 @@ function SupplierManagement() {
                 const stats = getFulfillmentStats(selectedSupplier.id || selectedSupplier._id)
                 return (
                   <>
-              <div className="details-grid">
-                <div className="detail-item">
-                  <label>Total Orders</label>
+                    <div className="details-grid">
+                      <div className="detail-item">
+                        <label>Total Orders</label>
                         <p className="stat-value-sm">{stats.totalOrders}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Completed Orders</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>Completed Orders</label>
                         <p className="stat-value-sm" style={{ color: 'var(--success)' }}>{stats.completedOrders}</p>
-                </div>
-                <div className="detail-item">
-                  <label>On-Time Deliveries</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>On-Time Deliveries</label>
                         <p className="stat-value-sm" style={{ color: 'var(--success)' }}>{stats.onTimeDeliveries}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Late Deliveries</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>Late Deliveries</label>
                         <p className="stat-value-sm" style={{ color: 'var(--warning)' }}>{stats.lateDeliveries}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Cancelled Orders</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>Cancelled Orders</label>
                         <p className="stat-value-sm" style={{ color: 'var(--error)' }}>{stats.cancelledOrders}</p>
-                </div>
-                <div className="detail-item">
-                  <label>Success Rate</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>Success Rate</label>
                         <p className="stat-value-sm">{stats.deliverySuccessRate}%</p>
-                </div>
-                <div className="detail-item">
-                  <label>On-Time Rate</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>On-Time Rate</label>
                         <p className="stat-value-sm">{stats.onTimeRate}%</p>
-                </div>
-                <div className="detail-item">
-                  <label>Avg. Delivery Time</label>
+                      </div>
+                      <div className="detail-item">
+                        <label>Avg. Delivery Time</label>
                         <p className="stat-value-sm">{stats.averageDeliveryTime} days</p>
-                </div>
-              </div>
+                      </div>
+                    </div>
 
-              <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Orders</h3>
-              <div className="documents-list">
+                    <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Orders</h3>
+                    <div className="documents-list">
                       {stats.recentOrders.length > 0 ? (
                         stats.recentOrders.map((order, index) => (
-                    <div key={index} className="document-item">
-                      <div className="document-icon">
-                        {order.status === 'Delivered' ? '🚚' : order.status === 'Cancelled' ? '❌' : '⏳'}
-                      </div>
-                      <div className="document-info">
-                        <div className="document-name">Order #{order.orderId}</div>
-                        <div className="document-meta">
+                          <div key={index} className="document-item">
+                            <div className="document-icon">
+                              {order.status === 'Delivered' ? '🚚' : order.status === 'Cancelled' ? '❌' : '⏳'}
+                            </div>
+                            <div className="document-info">
+                              <div className="document-name">Order #{order.orderId}</div>
+                              <div className="document-meta">
                                 {order.orderDate} • Delivered: {order.deliveryDate || 'Pending'} • {order.deliveryTime ? `${order.deliveryTime} days` : 'N/A'}
-                        </div>
-                      </div>
-                      <span className={`status-badge ${
-                        order.status === 'Delivered' && order.onTime ? 'status-success' : 
-                        order.status === 'Delivered' && !order.onTime ? 'status-warning' :
-                        order.status === 'Cancelled' ? 'status-error' : 
-                        'status-info'
-                      }`}>
-                        {order.status} {order.onTime !== undefined && (order.onTime ? '✓' : '⚠️')}
-                      </span>
+                              </div>
+                            </div>
+                            <span className={`status-badge ${order.status === 'Delivered' && order.onTime ? 'status-success' :
+                              order.status === 'Delivered' && !order.onTime ? 'status-warning' :
+                                order.status === 'Cancelled' ? 'status-error' :
+                                  'status-info'
+                              }`}>
+                              {order.status} {order.onTime !== undefined && (order.onTime ? '✓' : '⚠️')}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="no-documents">No order history available yet.</p>
+                      )}
                     </div>
-                  ))
-                ) : (
-                  <p className="no-documents">No order history available yet.</p>
-                )}
-              </div>
                   </>
                 )
               })()}
