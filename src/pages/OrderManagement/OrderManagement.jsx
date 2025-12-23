@@ -37,6 +37,7 @@ function OrderManagement() {
   const [orders, setOrders] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [products, setProducts] = useState([])
+  const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedOrder, setSelectedOrder] = useState(null)
@@ -63,10 +64,10 @@ function OrderManagement() {
     const loadData = async () => {
       setLoading(true)
       try {
-        const [ordersRes, usersRes, productsRes] = await Promise.all([
+        const [ordersRes, usersRes, propertiesRes] = await Promise.all([
           fetchData('/supplier-orders'),
           fetchData('/users'),
-          fetchData('/products')
+          fetchData('/properties')
         ])
         if (ordersRes.success) {
           setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
@@ -78,9 +79,11 @@ function OrderManagement() {
           )
           setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
         }
-        if (productsRes.success) {
-          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+        if (propertiesRes.success) {
+          const propertiesData = propertiesRes.data?.properties || propertiesRes.data || []
+          setProperties(Array.isArray(propertiesData) ? propertiesData : [])
         }
+
       } catch (error) {
         setError('Failed to load data')
         showNotification('Failed to load data', 'error')
@@ -138,6 +141,35 @@ function OrderManagement() {
     setShowDeliveryModal(true)
   }
 
+  const handleSupplierChange = async (supplierId) => {
+    setSelectedOrder(prev => ({
+      ...prev,
+      supplierId,
+      items: (prev?.items || []).map(item => ({
+        ...item,
+        productId: '',
+        unitPrice: 0
+      }))
+    }))
+
+    if (supplierId) {
+      try {
+        const result = await fetchData(`/products?supplierId=${supplierId}`)
+        if (result.success) {
+          setProducts(Array.isArray(result.data) ? result.data : [])
+        } else {
+          showNotification('Failed to load products for this supplier', 'error')
+          setProducts([])
+        }
+      } catch (error) {
+        console.error('Error fetching products:', error)
+        setProducts([])
+      }
+    } else {
+      setProducts([])
+    }
+  }
+
   const handleSaveOrder = async (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
@@ -160,6 +192,7 @@ function OrderManagement() {
     // Format the order data
     const orderData = {
       supplierId: formData.get('supplierId'),
+      propertyId: formData.get('propertyId'),
       status: formData.get('status') || 'pending',
       expectedDelivery: formData.get('expectedDelivery') || undefined,
       items: items.map(item => ({
@@ -173,8 +206,8 @@ function OrderManagement() {
       notes: formData.get('notes')
     }
 
-    const endpoint = selectedOrder ? `/supplier-orders/${selectedOrder._id || selectedOrder.id}` : '/supplier-orders'
-    const method = selectedOrder ? 'PUT' : 'POST'
+    const endpoint = showEditModal ? `/supplier-orders/${selectedOrder._id || selectedOrder.id}` : '/supplier-orders'
+    const method = showEditModal ? 'PUT' : 'POST'
 
     const result = await fetchData(endpoint, {
       method,
@@ -182,7 +215,7 @@ function OrderManagement() {
     })
 
     if (result.success) {
-      showNotification(selectedOrder ? 'Order updated successfully!' : 'Order created successfully!', 'success')
+      showNotification(showEditModal ? 'Order updated successfully!' : 'Order created successfully!', 'success')
       const ordersRes = await fetchData('/supplier-orders')
       if (ordersRes.success) {
         setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
@@ -572,7 +605,7 @@ function OrderManagement() {
         <div className="modal-overlay" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedOrder(null); }}>
           <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{selectedOrder ? 'Edit Order' : 'Create Purchase Order'}</h2>
+              <h2>{showEditModal ? 'Edit Order' : 'Create Purchase Order'}</h2>
               <button className="close-btn" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedOrder(null); }}>×</button>
             </div>
             <div className="modal-body">
@@ -580,11 +613,32 @@ function OrderManagement() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Supplier *</label>
-                    <select name="supplierId" required defaultValue={selectedOrder?.supplierId?._id || selectedOrder?.supplierId}>
+                    <select
+                      name="supplierId"
+                      required
+                      defaultValue={selectedOrder?.supplierId?._id || selectedOrder?.supplierId}
+                      onChange={(e) => handleSupplierChange(e.target.value)}
+                    >
                       <option value="">Select Supplier</option>
                       {suppliers.map((s) => (
                         <option key={s._id || s.id} value={s._id || s.id}>{s.company || s.name}</option>
                       ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Property *</label>
+                    <select
+                      name="propertyId"
+                      required
+                      defaultValue={selectedOrder?.propertyId?._id || selectedOrder?.propertyId}
+                    >
+                      <option value="">Select Property</option>
+                      {properties.map((p) => {
+                        const displayName = p.title || p.name || `${p.flatNo}${p.buildingName ? ` - ${p.buildingName}` : ''}` || 'Unnamed Property';
+                        return (
+                          <option key={p._id || p.id} value={p._id || p.id}>{displayName}</option>
+                        )
+                      })}
                     </select>
                   </div>
                   <div className="form-group">
@@ -600,8 +654,13 @@ function OrderManagement() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Expected Delivery</label>
-                    <input type="date" name="expectedDelivery" defaultValue={selectedOrder?.expectedDelivery ? new Date(selectedOrder.expectedDelivery).toISOString().split('T')[0] : ''} />
+                    <label>Expected Delivery *</label>
+                    <input
+                      type="date"
+                      name="expectedDelivery"
+                      required
+                      defaultValue={selectedOrder?.expectedDelivery ? new Date(selectedOrder.expectedDelivery).toISOString().split('T')[0] : ''}
+                    />
                   </div>
                   <div className="form-group">
                     <label>Payment Status</label>
