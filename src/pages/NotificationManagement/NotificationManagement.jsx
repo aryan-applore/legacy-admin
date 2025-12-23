@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApiFetch, useNotification } from '../../lib/apiHelpers'
+import { MultiSelect } from '../../components/ui/multi-select'
 import './NotificationManagement.css'
 
 function NotificationManagement() {
   const { fetchData } = useApiFetch()
   const [notification, showNotification] = useNotification()
   const [notifications, setNotifications] = useState([])
+  const [users, setUsers] = useState({ buyers: [], brokers: [], suppliers: [] })
+  const [properties, setProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
     overview: { total: 0, read: 0, unread: 0, readRate: '0' },
@@ -18,25 +21,37 @@ function NotificationManagement() {
   })
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBulkModal, setShowBulkModal] = useState(false)
+
+  // Single Notification Form State
   const [formData, setFormData] = useState({
-    buyerId: '',
+    recipientId: '',
+    recipientModel: 'Buyer', // Default to Buyer
     type: 'general',
     title: '',
     message: '',
     propertyId: '',
-    actionUrl: ''
+    actionUrl: '',
+    sendPush: true
   })
+
+  // Bulk Notification Form State
   const [bulkFormData, setBulkFormData] = useState({
     buyerIds: [],
+    brokerIds: [],
+    supplierIds: [],
     type: 'general',
     title: '',
     message: '',
-    actionUrl: ''
+    propertyId: '', // Added propertyId
+    actionUrl: '',
+    sendPush: true
   })
 
   useEffect(() => {
     fetchNotifications()
     fetchStats()
+    fetchUsers()
+    fetchProperties()
   }, [filters])
 
   const fetchNotifications = async () => {
@@ -74,9 +89,36 @@ function NotificationManagement() {
     }
   }
 
+  const fetchUsers = async () => {
+    try {
+      const result = await fetchData('/users')
+      if (result.success && result.data) {
+        const allUsers = result.data
+        setUsers({
+          buyers: allUsers.filter(u => u.role === 'buyer'),
+          brokers: allUsers.filter(u => u.role === 'broker'),
+          suppliers: allUsers.filter(u => u.role === 'supplier')
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    }
+  }
+
+  const fetchProperties = async () => {
+    try {
+      const result = await fetchData('/properties')
+      if (result.success) {
+        setProperties(Array.isArray(result.data?.properties) ? result.data.properties : (Array.isArray(result.data) ? result.data : []))
+      }
+    } catch (error) {
+      console.error('Error fetching properties:', error)
+    }
+  }
+
   const handleCreateNotification = async (e) => {
     e.preventDefault()
-    if (!formData.buyerId || !formData.title || !formData.message) {
+    if (!formData.recipientId || !formData.title || !formData.message) {
       showNotification('Please fill all required fields', 'error')
       return
     }
@@ -90,12 +132,14 @@ function NotificationManagement() {
         showNotification('Notification created successfully', 'success')
         setShowCreateModal(false)
         setFormData({
-          buyerId: '',
+          recipientId: '',
+          recipientModel: 'Buyer',
           type: 'general',
           title: '',
           message: '',
           propertyId: '',
-          actionUrl: ''
+          actionUrl: '',
+          sendPush: true
         })
         fetchNotifications()
         fetchStats()
@@ -110,8 +154,10 @@ function NotificationManagement() {
 
   const handleBulkNotification = async (e) => {
     e.preventDefault()
-    if (!bulkFormData.buyerIds.length || !bulkFormData.title || !bulkFormData.message) {
-      showNotification('Please fill all required fields', 'error')
+    const hasRecipients = bulkFormData.buyerIds.length > 0 || bulkFormData.brokerIds.length > 0 || bulkFormData.supplierIds.length > 0
+
+    if (!hasRecipients || !bulkFormData.title || !bulkFormData.message) {
+      showNotification('Please select at least one recipient and fill required fields', 'error')
       return
     }
 
@@ -121,14 +167,18 @@ function NotificationManagement() {
         body: JSON.stringify(bulkFormData)
       })
       if (result.success) {
-        showNotification(`Bulk notification sent to ${result.data?.count || 0} users`, 'success')
+        showNotification(`Bulk notification sent successfully`, 'success')
         setShowBulkModal(false)
         setBulkFormData({
           buyerIds: [],
+          brokerIds: [],
+          supplierIds: [],
           type: 'general',
           title: '',
           message: '',
-          actionUrl: ''
+          propertyId: '',
+          actionUrl: '',
+          sendPush: true
         })
         fetchNotifications()
         fetchStats()
@@ -152,25 +202,47 @@ function NotificationManagement() {
     })
   }
 
+
+  const availableProperties = useMemo(() => {
+    if (!formData.recipientId) return []
+
+    return properties.filter(p => {
+      // Helper to match ID safely
+      const matchesId = (id) => id === formData.recipientId
+
+      if (formData.recipientModel === 'Buyer') {
+        if (matchesId(p.buyerId) || matchesId(p.buyer?._id) || matchesId(p.buyer?.id)) return true
+        if (p.buyers && Array.isArray(p.buyers) && p.buyers.some(b => matchesId(b._id) || matchesId(b.id))) return true
+      }
+
+      if (formData.recipientModel === 'Broker') {
+        if (matchesId(p.brokerId) || matchesId(p.broker?._id) || matchesId(p.broker?.id)) return true
+        if (p.brokers && Array.isArray(p.brokers) && p.brokers.some(b => matchesId(b._id) || matchesId(b.id))) return true
+      }
+
+      return false
+    })
+  }, [properties, formData.recipientId, formData.recipientModel])
+
   return (
     <div className="notification-management-page">
       <div className="page-header">
         <div>
           <h1 className="page-title-white">Notifications</h1>
           <p className="page-subtitle">
-            Total: {stats.overview?.total || 0} | 
-            Read: {stats.overview?.read || 0} | 
+            Total: {stats.overview?.total || 0} |
+            Read: {stats.overview?.read || 0} |
             Unread: {stats.overview?.unread || 0}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button 
+          <button
             className="btn btn-outline"
             onClick={() => setShowBulkModal(true)}
           >
             Bulk Send
           </button>
-          <button 
+          <button
             className="btn btn-primary"
             onClick={() => setShowCreateModal(true)}
           >
@@ -181,14 +253,14 @@ function NotificationManagement() {
 
       <div className="card filters-section">
         <div className="filters-grid">
-          <input 
-            type="text" 
-            placeholder="Search by buyer ID..." 
+          <input
+            type="text"
+            placeholder="Search by User ID..."
             className="search-input-full"
             value={filters.buyerId}
             onChange={(e) => setFilters({ ...filters, buyerId: e.target.value })}
           />
-          <select 
+          <select
             className="filter-select"
             value={filters.type}
             onChange={(e) => setFilters({ ...filters, type: e.target.value })}
@@ -201,7 +273,7 @@ function NotificationManagement() {
             <option value="ticket_update">Ticket Update</option>
             <option value="general">General</option>
           </select>
-          <select 
+          <select
             className="filter-select"
             value={filters.isRead}
             onChange={(e) => setFilters({ ...filters, isRead: e.target.value })}
@@ -225,7 +297,7 @@ function NotificationManagement() {
                 <th>Title</th>
                 <th>Type</th>
                 <th>Message</th>
-                <th>Buyer</th>
+                <th>Recipient</th>
                 <th>Status</th>
                 <th>Date</th>
               </tr>
@@ -238,7 +310,10 @@ function NotificationManagement() {
                     <span className="type-badge">{notif.type || 'general'}</span>
                   </td>
                   <td className="message-cell">{notif.message}</td>
-                  <td>{notif.buyerId || 'N/A'}</td>
+                  <td>
+                    {notif.recipientModel || 'User'} <br />
+                    <small className="text-muted-foreground">{notif.recipientId?.name || notif.recipientId || 'N/A'}</small>
+                  </td>
                   <td>
                     <span className={`status-badge ${notif.isRead ? 'status-success' : 'status-warning'}`}>
                       {notif.isRead ? 'Read' : 'Unread'}
@@ -261,15 +336,38 @@ function NotificationManagement() {
               <button className="close-btn" onClick={() => setShowCreateModal(false)}>×</button>
             </div>
             <form onSubmit={handleCreateNotification} className="modal-body">
-              <div className="form-group">
-                <label>Buyer ID *</label>
-                <input
-                  type="text"
-                  value={formData.buyerId}
-                  onChange={(e) => setFormData({ ...formData, buyerId: e.target.value })}
-                  required
-                />
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Recipient Type *</label>
+                  <select
+                    value={formData.recipientModel}
+                    onChange={(e) => setFormData({ ...formData, recipientModel: e.target.value, recipientId: '', propertyId: '' })}
+                    required
+                  >
+                    <option value="Buyer">Buyer</option>
+                    <option value="Broker">Broker</option>
+                    <option value="Supplier">Supplier</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Recipient *</label>
+                  <select
+                    value={formData.recipientId}
+                    onChange={(e) => setFormData({ ...formData, recipientId: e.target.value, propertyId: '' })}
+                    required
+                  >
+                    <option value="">Select User</option>
+                    {(formData.recipientModel === 'Buyer' ? users.buyers :
+                      formData.recipientModel === 'Broker' ? users.brokers :
+                        users.suppliers).map(user => (
+                          <option key={user._id || user.id} value={user._id || user.id}>
+                            {user.name || user.company || 'Unnamed User'}
+                          </option>
+                        ))}
+                  </select>
+                </div>
               </div>
+
               <div className="form-group">
                 <label>Type *</label>
                 <select
@@ -278,6 +376,8 @@ function NotificationManagement() {
                   required
                 >
                   <option value="general">General</option>
+                  <option value="alert">Alert</option>
+                  <option value="offer">Offer</option>
                   <option value="payment_due">Payment Due</option>
                   <option value="payment_received">Payment Received</option>
                   <option value="progress_update">Progress Update</option>
@@ -303,21 +403,40 @@ function NotificationManagement() {
                   required
                 />
               </div>
-              <div className="form-group">
-                <label>Property ID</label>
-                <input
-                  type="text"
-                  value={formData.propertyId}
-                  onChange={(e) => setFormData({ ...formData, propertyId: e.target.value })}
-                />
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Property (Optional)</label>
+                  <select
+                    value={formData.propertyId}
+                    onChange={(e) => setFormData({ ...formData, propertyId: e.target.value })}
+                  >
+                    <option value="">Select Property</option>
+                    {availableProperties.map(p => {
+                      const displayName = p.title || p.name || `${p.flatNo}${p.buildingName ? ` - ${p.buildingName}` : ''}` || 'Unnamed Property';
+                      return (
+                        <option key={p._id || p.id} value={p._id || p.id}>{displayName}</option>
+                      )
+                    })}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Action URL</label>
+                  <input
+                    type="text"
+                    value={formData.actionUrl}
+                    onChange={(e) => setFormData({ ...formData, actionUrl: e.target.value })}
+                  />
+                </div>
               </div>
               <div className="form-group">
-                <label>Action URL</label>
-                <input
-                  type="text"
-                  value={formData.actionUrl}
-                  onChange={(e) => setFormData({ ...formData, actionUrl: e.target.value })}
-                />
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.sendPush}
+                    onChange={(e) => setFormData({ ...formData, sendPush: e.target.checked })}
+                  />
+                  Send Push Notification
+                </label>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setShowCreateModal(false)}>
@@ -342,18 +461,41 @@ function NotificationManagement() {
             </div>
             <form onSubmit={handleBulkNotification} className="modal-body">
               <div className="form-group">
-                <label>Buyer IDs (comma-separated) *</label>
-                <input
-                  type="text"
-                  placeholder="buyer_id1, buyer_id2, buyer_id3"
-                  value={bulkFormData.buyerIds.join(', ')}
-                  onChange={(e) => setBulkFormData({ 
-                    ...bulkFormData, 
-                    buyerIds: e.target.value.split(',').map(id => id.trim()).filter(id => id) 
-                  })}
-                  required
+                <label>Select Buyers</label>
+                <MultiSelect
+                  value={bulkFormData.buyerIds}
+                  onChange={(selected) => setBulkFormData({ ...bulkFormData, buyerIds: selected })}
+                  options={users.buyers}
+                  getOptionLabel={(u) => u.name || u.email || 'Unnamed Buyer'}
+                  getOptionValue={(u) => u._id || u.id}
+                  placeholder="Select buyers..."
                 />
               </div>
+
+              <div className="form-group">
+                <label>Select Brokers</label>
+                <MultiSelect
+                  value={bulkFormData.brokerIds}
+                  onChange={(selected) => setBulkFormData({ ...bulkFormData, brokerIds: selected })}
+                  options={users.brokers}
+                  getOptionLabel={(u) => u.name || u.company || u.email || 'Unnamed Broker'}
+                  getOptionValue={(u) => u._id || u.id}
+                  placeholder="Select brokers..."
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Select Suppliers</label>
+                <MultiSelect
+                  value={bulkFormData.supplierIds}
+                  onChange={(selected) => setBulkFormData({ ...bulkFormData, supplierIds: selected })}
+                  options={users.suppliers}
+                  getOptionLabel={(u) => u.name || u.company || u.email || 'Unnamed Supplier'}
+                  getOptionValue={(u) => u._id || u.id}
+                  placeholder="Select suppliers..."
+                />
+              </div>
+
               <div className="form-group">
                 <label>Type *</label>
                 <select
@@ -362,6 +504,8 @@ function NotificationManagement() {
                   required
                 >
                   <option value="general">General</option>
+                  <option value="alert">Alert</option>
+                  <option value="offer">Offer</option>
                   <option value="payment_due">Payment Due</option>
                   <option value="payment_received">Payment Received</option>
                   <option value="progress_update">Progress Update</option>
@@ -387,13 +531,40 @@ function NotificationManagement() {
                   required
                 />
               </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Property (Optional)</label>
+                  <select
+                    value={bulkFormData.propertyId}
+                    onChange={(e) => setBulkFormData({ ...bulkFormData, propertyId: e.target.value })}
+                  >
+                    <option value="">Select Property</option>
+                    {properties.map(p => {
+                      const displayName = p.title || p.name || `${p.flatNo}${p.buildingName ? ` - ${p.buildingName}` : ''}` || 'Unnamed Property';
+                      return (
+                        <option key={p._id || p.id} value={p._id || p.id}>{displayName}</option>
+                      )
+                    })}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Action URL</label>
+                  <input
+                    type="text"
+                    value={bulkFormData.actionUrl}
+                    onChange={(e) => setBulkFormData({ ...bulkFormData, actionUrl: e.target.value })}
+                  />
+                </div>
+              </div>
               <div className="form-group">
-                <label>Action URL</label>
-                <input
-                  type="text"
-                  value={bulkFormData.actionUrl}
-                  onChange={(e) => setBulkFormData({ ...bulkFormData, actionUrl: e.target.value })}
-                />
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={bulkFormData.sendPush}
+                    onChange={(e) => setBulkFormData({ ...bulkFormData, sendPush: e.target.checked })}
+                  />
+                  Send Push Notification
+                </label>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setShowBulkModal(false)}>
@@ -405,15 +576,18 @@ function NotificationManagement() {
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div >
+      )
+      }
 
-      {notification && (
-        <div className={`notification-toast ${notification.type}`}>
-          {notification.message}
-        </div>
-      )}
-    </div>
+      {
+        notification && (
+          <div className={`notification-toast ${notification.type}`}>
+            {notification.message}
+          </div>
+        )
+      }
+    </div >
   )
 }
 

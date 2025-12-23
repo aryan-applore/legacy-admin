@@ -103,7 +103,7 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
     // also check if installments are valid
     const isInstallmentsValid = installments.every(inst => inst.amount && inst.dueDate)
     const isInstallmentsBalanced = Math.abs(installmentDifference) <= 0.01
-    
+
     // If project is selected, property, soldPrice, and installments are all required
     const isValid = hasProperty && hasSoldPrice && hasInstallments && isInstallmentsValid && isInstallmentsBalanced
     onValidationChange(isValid)
@@ -286,7 +286,7 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
         <div className="form-row">
           <div className="form-group">
             <label>Sold Price (₹) {selectedProjectId ? '*' : ''}</label>
-            <input
+            <Input
               type="number"
               value={soldPrice}
               onChange={(e) => setSoldPrice(e.target.value)}
@@ -303,36 +303,26 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
             <strong style={{ fontSize: '14px' }}>
               Sold Price: ₹{totalPayment.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </strong>
-            <button
+            <Button
               type="button"
               onClick={handleAddInstallment}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: '#2A669B',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
+              className="bg-[#2A669B] hover:bg-[#1d4b73] text-white"
+              size="sm"
             >
-              <Plus size={14} />
+              <Plus size={14} className="mr-1" />
               Add Installment
-            </button>
+            </Button>
           </div>
 
           {/* Installments List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {installments.map((installment, index) => (
-              <div key={index} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                <div className="form-group" style={{ flex: 1 }}>
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 160px auto', gap: '8px', alignItems: 'flex-end' }}>
+                <div className="form-group">
                   <label style={{ fontSize: '12px' }}>
                     Installment {index + 1} Amount (₹) {selectedProjectId ? '*' : ''}
                   </label>
-                  <input
+                  <Input
                     type="number"
                     value={installment.amount}
                     onChange={(e) => handleInstallmentChange(index, 'amount', e.target.value)}
@@ -342,45 +332,42 @@ function PropertyAssignmentForm({ projects, properties, brokers, onValidationCha
                     required={!!selectedProjectId}
                   />
                 </div>
-                <div className="form-group" style={{ flex: 1 }}>
+                <div className="form-group">
                   <label style={{ fontSize: '12px' }}>Due Date</label>
-                  <input
+                  <Input
                     type="date"
                     value={installment.dueDate}
                     onChange={(e) => handleInstallmentChange(index, 'dueDate', e.target.value)}
                   />
                 </div>
-                <div className="form-group" style={{ width: '160px' }}>
+                <div className="form-group">
                   <label style={{ fontSize: '12px' }}>Status</label>
                   <select
                     value={installment.status || 'pending'}
                     onChange={(e) => handleInstallmentChange(index, 'status', e.target.value)}
+                    className="w-full p-2 border rounded-md h-10 text-sm"
                   >
                     <option value="pending">Pending</option>
                     <option value="paid">Paid</option>
                   </select>
                 </div>
-                {installments.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveInstallment(index)}
-                    style={{
-                      padding: '8px',
-                      backgroundColor: '#dc2626',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      height: '38px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title="Remove installment"
-                  >
-                    <X size={16} />
-                  </button>
-                )}
+                <div className="form-group">
+                  <label style={{ fontSize: '12px', visibility: 'hidden' }}>&nbsp;</label>
+                  {installments.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => handleRemoveInstallment(index)}
+                      className="h-10 w-10"
+                      title="Remove installment"
+                    >
+                      <X size={16} />
+                    </Button>
+                  ) : (
+                    <div style={{ height: '40px', width: '40px' }}></div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -458,6 +445,11 @@ function BuyerManagement() {
   // Store documents fetched from API
   const [apiDocuments, setApiDocuments] = useState({})
   const [loadingDocuments, setLoadingDocuments] = useState(false)
+
+  // Profile Image State
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   // Fetch projects, brokers, and properties (lazy load when modal opens)
   const fetchProjectsAndBrokers = async () => {
@@ -560,7 +552,8 @@ function BuyerManagement() {
               documents: 0, // Should be fetched from documents
               tickets: 0, // Should be fetched from tickets
               role: user.role || 'user',
-              properties: userProperties // Store all properties
+              properties: userProperties,
+              profilePicture: user.profilePicture || null
             }
           })
           setUsers(mappedUsers)
@@ -642,6 +635,8 @@ function BuyerManagement() {
 
   const handleEditUser = async (user) => {
     setSelectedUser(user)
+    setImagePreview(user.profilePicture || null)
+    setImageFile(null)
 
     // Load existing property assignments from user's properties
     if (user.properties && user.properties.length > 0) {
@@ -745,8 +740,21 @@ function BuyerManagement() {
     return errors
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showNotification('Image size should be less than 5MB', 'error')
+        return
+      }
+      setImageFile(file)
+      setImagePreview(URL.createObjectURL(file))
+    }
+  }
+
   const handleSaveUser = async (e) => {
     e.preventDefault()
+    setUploadingImage(true)
     const formData = new FormData(e.target)
 
     // Validate form
@@ -755,6 +763,7 @@ function BuyerManagement() {
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors)
       showNotification('Please fix the validation errors', 'error')
+      setUploadingImage(false)
       return
     }
 
@@ -762,12 +771,34 @@ function BuyerManagement() {
     setFormErrors({})
 
     try {
+      let imageUrl = selectedUser?.profilePicture || ''
+
+      // 1. Upload image if a new file is selected
+      if (imageFile && imageFile instanceof File) {
+        const uploadFormData = new FormData()
+        uploadFormData.append('file', imageFile)
+
+        const uploadRes = await fetchData('/upload/file', {
+          method: 'POST',
+          body: uploadFormData
+        })
+
+        if (uploadRes.success) {
+          imageUrl = uploadRes.data?.url || uploadRes.data
+        } else {
+          showNotification('Failed to upload image: ' + (uploadRes.error || 'Unknown error'), 'error')
+          setUploadingImage(false)
+          return
+        }
+      }
+
       const userData = {
         name: formData.get('name'),
         email: formData.get('email'),
         phone: formData.get('phone'),
         password: formData.get('password') || undefined,
         role: 'user',
+        profilePicture: imageUrl,
         address: formData.get('address') ? {
           line1: formData.get('address'),
           city: '',
@@ -789,6 +820,7 @@ function BuyerManagement() {
         // Create new user
         if (!formData.get('password')) {
           showNotification('Password is required for new users', 'error')
+          setUploadingImage(false)
           return
         }
         data = await fetchData('/buyers', {
@@ -908,7 +940,8 @@ function BuyerManagement() {
               documents: 0,
               tickets: 0,
               role: user.role || 'user',
-              properties: userProperties
+              properties: userProperties,
+              profilePicture: user.profilePicture || null
             }
           })
           setUsers(mappedUsers)
@@ -919,12 +952,16 @@ function BuyerManagement() {
         setSelectedUser(null)
         setPropertyAssignments([])
         setFormErrors({})
+        setImageFile(null)
+        setImagePreview(null)
       } else {
         showNotification(data.error || 'Failed to save user', 'error')
       }
     } catch (err) {
       console.error('Error saving user:', err)
       showNotification('Failed to save user. Please try again.', 'error')
+    } finally {
+      setUploadingImage(false)
     }
   }
 
@@ -1434,21 +1471,35 @@ This is a sample document for demonstration purposes.`
   // Define columns
   const columns = useMemo(() => [
     {
-      accessorKey: "name",
+      accessorKey: "profilePicture",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="User Details" />
+        <DataTableColumnHeader column={column} title="Profile" />
       ),
       cell: ({ row }) => {
         const user = row.original
         return (
-          <div className="user-cell-um">
-            <div className="user-avatar-um">
-              {user.name.charAt(0)}
-            </div>
-            <div>
-              <div className="user-name-um">{user.name}</div>
-              <div className="user-meta">Joined: {user.joinDate}</div>
-            </div>
+          <div className="user-avatar-um">
+            {user.profilePicture ? (
+              <img src={user.profilePicture} alt={user.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              user.name.charAt(0)
+            )}
+          </div>
+        )
+      },
+      enableSorting: false,
+    },
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Name" />
+      ),
+      cell: ({ row }) => {
+        const user = row.original
+        return (
+          <div>
+            <div className="user-name-um">{user.name}</div>
+            <div className="user-meta">Joined: {user.joinDate}</div>
           </div>
         )
       },
@@ -1818,7 +1869,11 @@ This is a sample document for demonstration purposes.`
                 <div className="user-card-header">
                   <div className="user-cell-um">
                     <div className="user-avatar-um">
-                      {user.name.charAt(0)}
+                      {user.profilePicture ? (
+                        <img src={user.profilePicture} alt={user.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        user.name.charAt(0)
+                      )}
                     </div>
                     <div>
                       <div className="user-name-um">{user.name}</div>
@@ -2030,10 +2085,38 @@ This is a sample document for demonstration purposes.`
                 setFormErrors({})
                 setSelectedProjectId(null)
                 setSelectedPropertyId(null)
+                setImageFile(null)
+                setImagePreview(null)
               }}>×</button>
             </div>
             <div className="modal-body">
               <form className="user-form" onSubmit={handleSaveUser}>
+                <div className="form-row">
+                  <div className="form-group full-width">
+                    <label>Profile Image (Optional)</label>
+                    <div className="image-upload-container">
+                      <div className="image-preview-large">
+                        {imagePreview ? (
+                          <img src={imagePreview} alt="Preview" />
+                        ) : (
+                          <div className="no-image">
+                            <Users size={40} />
+                            <span>No image</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="image-upload-controls">
+                        <Input
+                          type="file"
+                          accept=".png,.jpg,.jpeg"
+                          onChange={handleImageChange}
+                          className="file-input"
+                        />
+                        <p className="upload-tip">PNG, JPG or JPEG (Max 5MB)</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label>Full Name *</label>
@@ -2244,101 +2327,145 @@ This is a sample document for demonstration purposes.`
             </div>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Documents Management Modal */}
-      {showDocumentsModal && selectedUser && (
-        <div className="modal-overlay" onClick={() => setShowDocumentsModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Manage Documents - {selectedUser.name}</h2>
-              <button className="close-btn" onClick={() => setShowDocumentsModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="documents-summary">
-                <p className="summary-text">
-                  Current Documents: <strong>{selectedUser.documents}</strong>
-                </p>
-                <p className="summary-text">
-                  User Email: <strong>{selectedUser.email}</strong>
-                </p>
+      {
+        showDocumentsModal && selectedUser && (
+          <div className="modal-overlay" onClick={() => setShowDocumentsModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Manage Documents - {selectedUser.name}</h2>
+                <button className="close-btn" onClick={() => setShowDocumentsModal(false)}>×</button>
               </div>
-
-              <h3 className="section-title">Upload New Document</h3>
-              <form className="document-form" onSubmit={handleUploadDocument}>
-                <div className="form-group">
-                  <label>Document Type *</label>
-                  <select name="documentType" required>
-                    <option value="">Select Document Type</option>
-                    <option>Welcome Letter</option>
-                    <option>Sale Agreement</option>
-                    <option>Payment Receipt</option>
-                    <option>Invoice</option>
-                    <option>Floor Plan</option>
-                    <option>Construction Update</option>
-                    <option>Other</option>
-                  </select>
+              <div className="modal-body">
+                <div className="documents-summary">
+                  <p className="summary-text">
+                    Current Documents: <strong>{selectedUser.documents}</strong>
+                  </p>
+                  <p className="summary-text">
+                    User Email: <strong>{selectedUser.email}</strong>
+                  </p>
                 </div>
 
-                <div className="form-group">
-                  <label>Document Title *</label>
-                  <input
-                    type="text"
-                    name="documentTitle"
-                    placeholder="e.g., Welcome Letter - 2024"
-                    required
-                  />
-                </div>
+                <h3 className="section-title">Upload New Document</h3>
+                <form className="document-form" onSubmit={handleUploadDocument}>
+                  <div className="form-group">
+                    <label>Document Type *</label>
+                    <select name="documentType" required>
+                      <option value="">Select Document Type</option>
+                      <option>Welcome Letter</option>
+                      <option>Sale Agreement</option>
+                      <option>Payment Receipt</option>
+                      <option>Invoice</option>
+                      <option>Floor Plan</option>
+                      <option>Construction Update</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
 
-                <div className="form-group">
-                  <label>Upload File *</label>
-                  <input
-                    type="file"
-                    name="document"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    required
-                    className="file-input"
-                  />
-                  <small>Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 10MB)</small>
-                </div>
+                  <div className="form-group">
+                    <label>Document Title *</label>
+                    <input
+                      type="text"
+                      name="documentTitle"
+                      placeholder="e.g., Welcome Letter - 2024"
+                      required
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label>Description</label>
-                  <textarea
-                    name="description"
-                    rows="3"
-                    placeholder="Add any notes or description about this document"
-                  ></textarea>
-                </div>
+                  <div className="form-group">
+                    <label>Upload File *</label>
+                    <input
+                      type="file"
+                      name="document"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      required
+                      className="file-input"
+                    />
+                    <small>Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 10MB)</small>
+                  </div>
 
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => setShowDocumentsModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Upload Document</button>
-                </div>
-              </form>
+                  <div className="form-group">
+                    <label>Description</label>
+                    <textarea
+                      name="description"
+                      rows="3"
+                      placeholder="Add any notes or description about this document"
+                    ></textarea>
+                  </div>
 
-              <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Documents</h3>
-              <div className="recent-documents-list">
-                {loadingDocuments ? (
-                  <p className="no-documents">Loading documents...</p>
-                ) : (apiDocuments[selectedUser.id] && apiDocuments[selectedUser.id].length > 0) ? (
-                  apiDocuments[selectedUser.id].map((doc) => {
-                    const uploadDate = doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : 'Unknown date'
-                    const fileType = doc.mimeType || 'application/pdf'
-                    const fileSize = doc.fileSize ? (doc.fileSize / 1024 / 1024).toFixed(2) : '0.00'
+                  <div className="form-actions">
+                    <button type="button" className="btn btn-outline" onClick={() => setShowDocumentsModal(false)}>Cancel</button>
+                    <button type="submit" className="btn btn-primary">Upload Document</button>
+                  </div>
+                </form>
 
-                    return (
+                <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Documents</h3>
+                <div className="recent-documents-list">
+                  {loadingDocuments ? (
+                    <p className="no-documents">Loading documents...</p>
+                  ) : (apiDocuments[selectedUser.id] && apiDocuments[selectedUser.id].length > 0) ? (
+                    apiDocuments[selectedUser.id].map((doc) => {
+                      const uploadDate = doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : 'Unknown date'
+                      const fileType = doc.mimeType || 'application/pdf'
+                      const fileSize = doc.fileSize ? (doc.fileSize / 1024 / 1024).toFixed(2) : '0.00'
+
+                      return (
+                        <div key={doc.id} className="document-item">
+                          <div className="document-icon">
+                            {fileType.includes('pdf') ? <FileText size={20} /> :
+                              fileType.includes('image') ? <ImageIcon size={20} /> :
+                                fileType.includes('word') || fileType.includes('document') ? <File size={20} /> : <FileText size={20} />}
+                          </div>
+                          <div className="document-info">
+                            <div className="document-name">{doc.name}</div>
+                            <div className="document-meta">
+                              {uploadDate} • {fileType.split('/')[1]?.toUpperCase() || 'FILE'} •
+                              {fileSize} MB
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              className="action-btn-um download-btn"
+                              onClick={() => handleViewInBrowser(doc)}
+                              title="View in Browser"
+                            >
+                              <ExternalLink size={16} />
+                            </button>
+                            <button
+                              className="action-btn-um download-btn"
+                              onClick={() => handleDownloadDocument(doc)}
+                              title="Download"
+                            >
+                              <Download size={16} />
+                            </button>
+                            <button
+                              className="action-btn-um download-btn"
+                              onClick={() => handleDeleteDocument(doc)}
+                              title="Delete"
+                              style={{ color: '#ef4444' }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })
+                  ) : (userDocuments[selectedUser.id] && userDocuments[selectedUser.id].length > 0) ? (
+                    userDocuments[selectedUser.id].map((doc) => (
                       <div key={doc.id} className="document-item">
                         <div className="document-icon">
-                          {fileType.includes('pdf') ? <FileText size={20} /> :
-                            fileType.includes('image') ? <ImageIcon size={20} /> :
-                              fileType.includes('word') || fileType.includes('document') ? <File size={20} /> : <FileText size={20} />}
+                          {doc.fileType?.includes('pdf') ? <FileText size={20} /> :
+                            doc.fileType?.includes('image') ? <ImageIcon size={20} /> :
+                              doc.fileType?.includes('word') ? <File size={20} /> : <FileText size={20} />}
                         </div>
                         <div className="document-info">
                           <div className="document-name">{doc.name}</div>
                           <div className="document-meta">
-                            {uploadDate} • {fileType.split('/')[1]?.toUpperCase() || 'FILE'} •
-                            {fileSize} MB
+                            {doc.uploadDate} • {doc.fileType?.split('/')[1]?.toUpperCase() || 'FILE'} •
+                            {(doc.fileSize / 1024 / 1024).toFixed(2)} MB
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -2366,221 +2493,184 @@ This is a sample document for demonstration purposes.`
                           </button>
                         </div>
                       </div>
-                    )
-                  })
-                ) : (userDocuments[selectedUser.id] && userDocuments[selectedUser.id].length > 0) ? (
-                  userDocuments[selectedUser.id].map((doc) => (
-                    <div key={doc.id} className="document-item">
-                      <div className="document-icon">
-                        {doc.fileType?.includes('pdf') ? <FileText size={20} /> :
-                          doc.fileType?.includes('image') ? <ImageIcon size={20} /> :
-                            doc.fileType?.includes('word') ? <File size={20} /> : <FileText size={20} />}
-                      </div>
-                      <div className="document-info">
-                        <div className="document-name">{doc.name}</div>
-                        <div className="document-meta">
-                          {doc.uploadDate} • {doc.fileType?.split('/')[1]?.toUpperCase() || 'FILE'} •
-                          {(doc.fileSize / 1024 / 1024).toFixed(2)} MB
+                    ))
+                  ) : selectedUser.documents > 0 ? (
+                    // Show sample documents for demo users
+                    <>
+                      <div className="document-item">
+                        <div className="document-icon"><FileText size={20} /></div>
+                        <div className="document-info">
+                          <div className="document-name">Welcome Letter</div>
+                          <div className="document-meta">Uploaded on {selectedUser.joinDate} • PDF • 2.3 MB</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="action-btn-um download-btn"
+                            onClick={() => handleViewInBrowser({
+                              name: 'Welcome_Letter',
+                              fileName: 'Welcome_Letter.pdf',
+                              fileType: 'application/pdf'
+                            })}
+                            title="View in Browser"
+                          >
+                            <ExternalLink size={16} />
+                          </button>
+                          <button
+                            className="action-btn-um download-btn"
+                            onClick={() => handleDownloadDocument({
+                              name: 'Welcome_Letter',
+                              fileName: 'Welcome_Letter.pdf',
+                              fileType: 'application/pdf'
+                            })}
+                            title="Download"
+                          >
+                            <Download size={16} />
+                          </button>
+                          <button
+                            className="action-btn-um download-btn"
+                            onClick={() => handleDeleteDocument({
+                              name: 'Welcome_Letter',
+                              fileName: 'Welcome_Letter.pdf',
+                              fileType: 'application/pdf',
+                              id: 'sample-welcome-letter'
+                            })}
+                            title="Delete"
+                            style={{ color: '#ef4444' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          className="action-btn-um download-btn"
-                          onClick={() => handleViewInBrowser(doc)}
-                          title="View in Browser"
-                        >
-                          <ExternalLink size={16} />
-                        </button>
-                        <button
-                          className="action-btn-um download-btn"
-                          onClick={() => handleDownloadDocument(doc)}
-                          title="Download"
-                        >
-                          <Download size={16} />
-                        </button>
-                        <button
-                          className="action-btn-um download-btn"
-                          onClick={() => handleDeleteDocument(doc)}
-                          title="Delete"
-                          style={{ color: '#ef4444' }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : selectedUser.documents > 0 ? (
-                  // Show sample documents for demo users
-                  <>
-                    <div className="document-item">
-                      <div className="document-icon"><FileText size={20} /></div>
-                      <div className="document-info">
-                        <div className="document-name">Welcome Letter</div>
-                        <div className="document-meta">Uploaded on {selectedUser.joinDate} • PDF • 2.3 MB</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          className="action-btn-um download-btn"
-                          onClick={() => handleViewInBrowser({
-                            name: 'Welcome_Letter',
-                            fileName: 'Welcome_Letter.pdf',
-                            fileType: 'application/pdf'
-                          })}
-                          title="View in Browser"
-                        >
-                          <ExternalLink size={16} />
-                        </button>
-                        <button
-                          className="action-btn-um download-btn"
-                          onClick={() => handleDownloadDocument({
-                            name: 'Welcome_Letter',
-                            fileName: 'Welcome_Letter.pdf',
-                            fileType: 'application/pdf'
-                          })}
-                          title="Download"
-                        >
-                          <Download size={16} />
-                        </button>
-                        <button
-                          className="action-btn-um download-btn"
-                          onClick={() => handleDeleteDocument({
-                            name: 'Welcome_Letter',
-                            fileName: 'Welcome_Letter.pdf',
-                            fileType: 'application/pdf',
-                            id: 'sample-welcome-letter'
-                          })}
-                          title="Delete"
-                          style={{ color: '#ef4444' }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <p className="no-documents">No documents uploaded yet.</p>
-                )}
+                    </>
+                  ) : (
+                    <p className="no-documents">No documents uploaded yet.</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Notifications Management Modal */}
-      {showNotificationsModal && selectedUser && (
-        <div className="modal-overlay" onClick={() => setShowNotificationsModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Send Notification - {selectedUser.name}</h2>
-              <button className="close-btn" onClick={() => setShowNotificationsModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="documents-summary">
-                <p className="summary-text">
-                  User Email: <strong>{selectedUser.email}</strong>
-                </p>
-                <p className="summary-text">
-                  Phone: <strong>{selectedUser.phone}</strong>
-                </p>
+      {
+        showNotificationsModal && selectedUser && (
+          <div className="modal-overlay" onClick={() => setShowNotificationsModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Send Notification - {selectedUser.name}</h2>
+                <button className="close-btn" onClick={() => setShowNotificationsModal(false)}>×</button>
               </div>
-
-              <h3 className="section-title">Create New Notification</h3>
-              <form className="notification-form" onSubmit={handleSendNotification}>
-                <div className="form-group">
-                  <label>Notification Type *</label>
-                  <select name="notificationType" required>
-                    <option value="">Select Type</option>
-                    <option>Payment Reminder</option>
-                    <option>Construction Update</option>
-                    <option>Document Available</option>
-                    <option>Meeting Scheduled</option>
-                    <option>General Announcement</option>
-                    <option>Urgent Alert</option>
-                  </select>
+              <div className="modal-body">
+                <div className="documents-summary">
+                  <p className="summary-text">
+                    User Email: <strong>{selectedUser.email}</strong>
+                  </p>
+                  <p className="summary-text">
+                    Phone: <strong>{selectedUser.phone}</strong>
+                  </p>
                 </div>
 
-                <div className="form-group">
-                  <label>Notification Channel *</label>
-                  <div className="checkbox-group">
-                    <label className="checkbox-label">
-                      <input type="checkbox" name="channelApp" defaultChecked />
-                      <span>Mobile App Push</span>
-                    </label>
-                    <label className="checkbox-label">
-                      <input type="checkbox" name="channelEmail" defaultChecked />
-                      <span>Email</span>
-                    </label>
-                    <label className="checkbox-label">
-                      <input type="checkbox" name="channelSMS" />
-                      <span>SMS</span>
-                    </label>
+                <h3 className="section-title">Create New Notification</h3>
+                <form className="notification-form" onSubmit={handleSendNotification}>
+                  <div className="form-group">
+                    <label>Notification Type *</label>
+                    <select name="notificationType" required>
+                      <option value="">Select Type</option>
+                      <option>Payment Reminder</option>
+                      <option>Construction Update</option>
+                      <option>Document Available</option>
+                      <option>Meeting Scheduled</option>
+                      <option>General Announcement</option>
+                      <option>Urgent Alert</option>
+                    </select>
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label>Notification Title *</label>
-                  <input
-                    type="text"
-                    name="notificationTitle"
-                    placeholder="e.g., Payment Due Reminder"
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Message *</label>
-                  <textarea
-                    name="notificationMessage"
-                    rows="4"
-                    placeholder="Enter your notification message here..."
-                    required
-                  ></textarea>
-                  <small>Character count: 0/500</small>
-                </div>
-
-                <div className="form-group">
-                  <label>Schedule</label>
-                  <select name="schedule">
-                    <option>Send Immediately</option>
-                    <option>Schedule for Later</option>
-                  </select>
-                </div>
-
-                <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => setShowNotificationsModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Send Notification</button>
-                </div>
-              </form>
-
-              <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Notifications</h3>
-              <div className="recent-notifications-list">
-                <div className="notification-item">
-                  <div className="notification-icon success"><Check size={16} /></div>
-                  <div className="notification-info">
-                    <div className="notification-title">Payment Received Confirmation</div>
-                    <div className="notification-meta">Sent 2 days ago • Read</div>
+                  <div className="form-group">
+                    <label>Notification Channel *</label>
+                    <div className="checkbox-group">
+                      <label className="checkbox-label">
+                        <input type="checkbox" name="channelApp" defaultChecked />
+                        <span>Mobile App Push</span>
+                      </label>
+                      <label className="checkbox-label">
+                        <input type="checkbox" name="channelEmail" defaultChecked />
+                        <span>Email</span>
+                      </label>
+                      <label className="checkbox-label">
+                        <input type="checkbox" name="channelSMS" />
+                        <span>SMS</span>
+                      </label>
+                    </div>
                   </div>
-                </div>
-                <div className="notification-item">
-                  <div className="notification-icon pending"><Mail size={16} /></div>
-                  <div className="notification-info">
-                    <div className="notification-title">Construction Progress Update</div>
-                    <div className="notification-meta">Sent 5 days ago • Delivered</div>
+
+                  <div className="form-group">
+                    <label>Notification Title *</label>
+                    <input
+                      type="text"
+                      name="notificationTitle"
+                      placeholder="e.g., Payment Due Reminder"
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Message *</label>
+                    <textarea
+                      name="notificationMessage"
+                      rows="4"
+                      placeholder="Enter your notification message here..."
+                      required
+                    ></textarea>
+                    <small>Character count: 0/500</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Schedule</label>
+                    <select name="schedule">
+                      <option>Send Immediately</option>
+                      <option>Schedule for Later</option>
+                    </select>
+                  </div>
+
+                  <div className="form-actions">
+                    <button type="button" className="btn btn-outline" onClick={() => setShowNotificationsModal(false)}>Cancel</button>
+                    <button type="submit" className="btn btn-primary">Send Notification</button>
+                  </div>
+                </form>
+
+                <h3 className="section-title" style={{ marginTop: '30px' }}>Recent Notifications</h3>
+                <div className="recent-notifications-list">
+                  <div className="notification-item">
+                    <div className="notification-icon success"><Check size={16} /></div>
+                    <div className="notification-info">
+                      <div className="notification-title">Payment Received Confirmation</div>
+                      <div className="notification-meta">Sent 2 days ago • Read</div>
+                    </div>
+                  </div>
+                  <div className="notification-item">
+                    <div className="notification-icon pending"><Mail size={16} /></div>
+                    <div className="notification-info">
+                      <div className="notification-title">Construction Progress Update</div>
+                      <div className="notification-meta">Sent 5 days ago • Delivered</div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Notification Toast */}
-      {notification && (
-        <div className={`notification-toast ${notification.type}`}>
-          {notification.message}
-        </div>
-      )}
-    </div>
+      {
+        notification && (
+          <div className={`notification-toast ${notification.type}`}>
+            {notification.message}
+          </div>
+        )
+      }
+    </div >
   )
 }
 

@@ -62,6 +62,9 @@ function ProductManagement() {
   const [columnVisibility, setColumnVisibility] = useState({})
 
   const [categories, setCategories] = useState([])
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const [uploading, setUploading] = useState(false)
 
   // Load products, suppliers, and categories
   useEffect(() => {
@@ -78,7 +81,7 @@ function ProductManagement() {
         }
         if (usersRes.success && usersRes.data) {
           // Filter suppliers from unified users response
-          const suppliersData = usersRes.data.filter(user => 
+          const suppliersData = usersRes.data.filter(user =>
             user.type === 'supplier' || user.role === 'supplier'
           )
           setSuppliers(Array.isArray(suppliersData) ? suppliersData : [])
@@ -100,22 +103,21 @@ function ProductManagement() {
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
       const searchLower = searchQuery.toLowerCase()
-      const matchesSearch = 
+      const matchesSearch =
         product.name?.toLowerCase().includes(searchLower) ||
         product.description?.toLowerCase().includes(searchLower)
 
-      const supplierId = product.supplierId?._id || product.supplierId
-      const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+      const supplier = product.supplierId
       const supplierName = supplier?.company || supplier?.name || 'N/A'
-      const matchesSupplier = 
+      const matchesSupplier =
         filterSupplier === 'All Suppliers' || supplierName === filterSupplier
 
-      const categoryName = product.category?.name || product.category
-      const matchesCategory = 
+      const categoryName = product.categoryId?.name || product.category?.name || product.category
+      const matchesCategory =
         filterCategory === 'All Categories' || categoryName === filterCategory
 
-      const matchesLowStock = 
-        !filterLowStock || (product.currentStock <= product.lowStockThreshold)
+      const matchesLowStock =
+        !filterLowStock || (product.quantity <= product.lowStockThreshold)
 
       return matchesSearch && matchesSupplier && matchesCategory && matchesLowStock
     })
@@ -124,11 +126,15 @@ function ProductManagement() {
   // Handlers
   const handleAddProduct = () => {
     setSelectedProduct(null)
+    setImagePreview(null)
+    setImageFile(null)
     setShowAddModal(true)
   }
 
   const handleEditProduct = (product) => {
     setSelectedProduct(product)
+    setImagePreview(product.image)
+    setImageFile(null)
     setShowEditModal(true)
   }
 
@@ -137,38 +143,84 @@ function ProductManagement() {
     setShowStockModal(true)
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showNotification('Image size should be less than 5MB', 'error')
+        return
+      }
+      setImageFile(file)
+      setImagePreview(URL.createObjectURL(file))
+    }
+  }
+
   const handleSaveProduct = async (e) => {
     e.preventDefault()
-    const formData = new FormData(e.target)
-    const productData = {
-      name: formData.get('name'),
-      description: formData.get('description'),
-      supplierId: formData.get('supplierId'),
-      category: formData.get('category'),
-      unit: formData.get('unit') || 'pieces',
-      currentStock: parseInt(formData.get('currentStock')) || 0,
-      lowStockThreshold: parseInt(formData.get('lowStockThreshold')) || 0
-    }
+    setUploading(true)
 
-    const endpoint = selectedProduct ? `/products/${selectedProduct._id || selectedProduct.id}` : '/products'
-    const method = selectedProduct ? 'PUT' : 'POST'
-    
-    const result = await fetchData(endpoint, {
-      method,
-      body: JSON.stringify(productData)
-    })
-    
-    if (result.success) {
-      showNotification(selectedProduct ? 'Product updated successfully!' : 'Product created successfully!', 'success')
-      const productsRes = await fetchData('/products')
-      if (productsRes.success) {
-        setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+    try {
+      const formData = new FormData(e.target)
+      let imageUrl = selectedProduct?.image || ''
+
+      // 1. Upload image if a new file is selected
+      if (imageFile && imageFile instanceof File) {
+        const uploadFormData = new FormData()
+        uploadFormData.append('file', imageFile)
+
+        const uploadRes = await fetchData('/upload/file', {
+          method: 'POST',
+          body: uploadFormData
+        })
+
+        if (uploadRes.success) {
+          imageUrl = uploadRes.data?.url || uploadRes.data
+        } else {
+          showNotification('Failed to upload image: ' + (uploadRes.error || 'Unknown error'), 'error')
+          setUploading(false)
+          return
+        }
       }
-      setShowAddModal(false)
-      setShowEditModal(false)
-      setSelectedProduct(null)
-    } else {
-      showNotification(result.error || 'Failed to save product', 'error')
+
+      const productData = {
+        name: formData.get('name'),
+        description: formData.get('description'),
+        supplierId: formData.get('supplierId'),
+        categoryId: formData.get('categoryId'),
+        unit: formData.get('unit') || 'pieces',
+        quantity: parseInt(formData.get('quantity')) || 0,
+        lowStockThreshold: parseInt(formData.get('lowStockThreshold')) || 0,
+        pricePerUnit: parseFloat(formData.get('pricePerUnit')) || 0,
+        image: imageUrl
+      }
+
+      const endpoint = selectedProduct ? `/products/${selectedProduct._id || selectedProduct.id}` : '/products'
+      const method = selectedProduct ? 'PUT' : 'POST'
+
+      const result = await fetchData(endpoint, {
+        method,
+        body: JSON.stringify(productData)
+      })
+
+      if (result.success) {
+        showNotification(selectedProduct ? 'Product updated successfully!' : 'Product created successfully!', 'success')
+        const productsRes = await fetchData('/products')
+        if (productsRes.success) {
+          setProducts(Array.isArray(productsRes.data) ? productsRes.data : [])
+        }
+        setShowAddModal(false)
+        setShowEditModal(false)
+        setSelectedProduct(null)
+        setImageFile(null)
+        setImagePreview(null)
+      } else {
+        showNotification(result.error || 'Failed to save product', 'error')
+      }
+    } catch (err) {
+      console.error('Error saving product:', err)
+      showNotification('An unexpected error occurred', 'error')
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -207,7 +259,7 @@ function ProductManagement() {
       method: 'PUT',
       body: JSON.stringify({ quantity, operation })
     })
-    
+
     if (result.success) {
       showNotification('Stock updated successfully!', 'success')
       const productsRes = await fetchData('/products')
@@ -230,7 +282,7 @@ function ProductManagement() {
       description: formData.get('description') || ''
     }
 
-    const endpoint = selectedCategory 
+    const endpoint = selectedCategory
       ? `/products/categories/${selectedCategory._id || selectedCategory.id}`
       : '/products/categories'
     const method = selectedCategory ? 'PUT' : 'POST'
@@ -308,12 +360,17 @@ function ProductManagement() {
       ),
       cell: ({ row }) => {
         const product = row.original
-        const supplierId = product.supplierId?._id || product.supplierId
-        const supplier = suppliers.find(s => (s._id || s.id) === supplierId)
+        const supplier = product.supplierId
         return (
           <div className="product-cell">
-            <div className="product-icon">
-              <Package size={20} />
+            <div className="product-image-container">
+              {product.image ? (
+                <img src={product.image} alt={product.name} className="product-table-img" />
+              ) : (
+                <div className="product-icon">
+                  <Package size={20} />
+                </div>
+              )}
             </div>
             <div>
               <div className="product-name">{product.name}</div>
@@ -324,27 +381,27 @@ function ProductManagement() {
       },
     },
     {
-      accessorKey: "category",
+      accessorKey: "categoryId",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Category" />
       ),
       cell: ({ row }) => {
-        const cat = row.original.category
-        return cat?.name || cat || 'N/A'
+        const cat = row.original.categoryId
+        return cat?.name || row.original.category?.name || row.original.category || 'N/A'
       }
     },
     {
-      accessorKey: "currentStock",
+      accessorKey: "quantity",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Stock" />
       ),
       cell: ({ row }) => {
         const product = row.original
-        const isLowStock = product.currentStock <= product.lowStockThreshold
+        const isLowStock = (product.quantity || 0) <= (product.lowStockThreshold || 0)
         return (
           <div>
             <div className={isLowStock ? 'stock-low' : 'stock-normal'}>
-              {product.currentStock} {product.unit}
+              {product.quantity || 0} {product.unit}
             </div>
             {isLowStock && (
               <div className="stock-warning">⚠️ Low Stock</div>
@@ -395,7 +452,7 @@ function ProductManagement() {
                 Update Stock
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => handleDeleteProduct(product._id || product.id)}
                 className="text-red-600"
               >
@@ -429,8 +486,8 @@ function ProductManagement() {
   // Stats
   const stats = useMemo(() => {
     const total = products.length
-    const lowStock = products.filter(p => p.currentStock <= p.lowStockThreshold).length
-    const totalStock = products.reduce((sum, p) => sum + p.currentStock, 0)
+    const lowStock = products.filter(p => (p.quantity || 0) <= (p.lowStockThreshold || 0)).length
+    const totalStock = products.reduce((sum, p) => sum + (p.quantity || 0), 0)
     return { total, lowStock, totalStock }
   }, [products])
 
@@ -490,7 +547,7 @@ function ProductManagement() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input-full"
           />
-          <select 
+          <select
             className="filter-select"
             value={filterSupplier}
             onChange={(e) => setFilterSupplier(e.target.value)}
@@ -500,7 +557,7 @@ function ProductManagement() {
               <option key={s._id || s.id}>{s.company || s.name}</option>
             ))}
           </select>
-          <select 
+          <select
             className="filter-select"
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
@@ -511,8 +568,8 @@ function ProductManagement() {
             ))}
           </select>
           <label className="filter-checkbox">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               checked={filterLowStock}
               onChange={(e) => setFilterLowStock(e.target.checked)}
             />
@@ -544,9 +601,9 @@ function ProductManagement() {
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                     </TableHead>
                   ))}
                 </TableRow>
@@ -586,16 +643,41 @@ function ProductManagement() {
 
       {/* Add/Edit Product Modal */}
       {(showAddModal || showEditModal) && (
-        <div className="modal-overlay" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedProduct(null); }}>
+        <div className="modal-overlay" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedProduct(null); setImageFile(null); setImagePreview(null); }}>
           <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{selectedProduct ? 'Edit Product' : 'Add New Product'}</h2>
-              <button className="close-btn" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedProduct(null); }}>×</button>
+              <button className="close-btn" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedProduct(null); setImageFile(null); setImagePreview(null); }}>×</button>
             </div>
             <div className="modal-body">
               <form onSubmit={handleSaveProduct}>
                 <div className="form-row">
-
+                  <div className="form-group full-width">
+                    <label>Product Image</label>
+                    <div className="image-upload-container">
+                      <div className="image-preview-large">
+                        {imagePreview ? (
+                          <img src={imagePreview} alt="Preview" />
+                        ) : (
+                          <div className="no-image">
+                            <Package size={40} />
+                            <span>No image selected</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="image-upload-controls">
+                        <Input
+                          type="file"
+                          accept=".png,.jpg,.jpeg"
+                          onChange={handleImageChange}
+                          className="file-input"
+                        />
+                        <p className="upload-tip">PNG, JPG or JPEG (Max 5MB)</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="form-row">
                   <div className="form-group">
                     <label>Name *</label>
                     <input type="text" name="name" defaultValue={selectedProduct?.name} required />
@@ -617,7 +699,7 @@ function ProductManagement() {
                   </div>
                   <div className="form-group">
                     <label>Category</label>
-                    <select name="category" defaultValue={selectedProduct?.category?._id || selectedProduct?.category} className="w-full p-2 border rounded">
+                    <select name="categoryId" defaultValue={selectedProduct?.categoryId?._id || selectedProduct?.category?._id || selectedProduct?.category} className="w-full p-2 border rounded">
                       <option value="">Select Category</option>
                       {categories.map((cat) => (
                         <option key={cat._id} value={cat._id}>{cat.name}</option>
@@ -627,12 +709,55 @@ function ProductManagement() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Unit</label>
-                    <input type="text" name="unit" defaultValue={selectedProduct?.unit || 'pieces'} />
+                    <label>Price Per Unit *</label>
+                    <div className="input-wrapper-relative">
+                      <span className="input-prefix-icon">₹</span>
+                      <input
+                        type="number"
+                        name="pricePerUnit"
+                        className="input-with-icon"
+                        defaultValue={selectedProduct?.pricePerUnit || selectedProduct?.price || 0}
+                        step="0.01"
+                        required
+                      />
+                    </div>
                   </div>
                   <div className="form-group">
-                    <label>Current Stock</label>
-                    <input type="number" name="currentStock" min="0" defaultValue={selectedProduct?.currentStock || 0} />
+                    <label>Unit</label>
+                    <select
+                      name="unit"
+                      defaultValue={selectedProduct?.unit || 'pieces'}
+                      className="w-full p-2 border rounded"
+                    >
+                      {[
+                        'units',
+                        'pieces',
+                        'kg',
+                        'grams',
+                        'tons',
+                        'liters',
+                        'milliliters',
+                        'bags',
+                        'boxes',
+                        'cubic meters',
+                        'square meters',
+                        'meters',
+                        'feet',
+                        'inches',
+                        'gallons',
+                        'quintals',
+                      ].map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Quantity</label>
+                    <input type="number" name="quantity" min="0" defaultValue={selectedProduct?.quantity || 0} />
                   </div>
                   <div className="form-group">
                     <label>Low Stock Threshold</label>
@@ -640,8 +765,10 @@ function ProductManagement() {
                   </div>
                 </div>
                 <div className="form-actions">
-                  <button type="button" className="btn btn-outline" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedProduct(null); }}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Save Product</button>
+                  <button type="button" className="btn btn-outline" onClick={() => { setShowAddModal(false); setShowEditModal(false); setSelectedProduct(null); setImageFile(null); setImagePreview(null); }}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={uploading}>
+                    {uploading ? 'Processing...' : (selectedProduct ? 'Update Product' : 'Save Product')}
+                  </button>
                 </div>
               </form>
             </div>
@@ -660,7 +787,7 @@ function ProductManagement() {
             <div className="modal-body">
               <form onSubmit={handleSaveStockUpdate}>
                 <div className="form-group">
-                  <label>Current Stock: {selectedProduct.currentStock} {selectedProduct.unit}</label>
+                  <label>Current Stock: {selectedProduct.quantity || 0} {selectedProduct.unit}</label>
                 </div>
                 <div className="form-group">
                   <label>Operation *</label>

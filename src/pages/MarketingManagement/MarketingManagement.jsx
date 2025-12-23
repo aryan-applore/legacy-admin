@@ -1,6 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApiFetch, useNotification } from '../../lib/apiHelpers'
 import './MarketingManagement.css'
+import {
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table"
+import { DataTablePagination } from "@/components/data-table/data-table-pagination"
+import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { MoreHorizontal, Eye, Play, Trash2, Plus } from 'lucide-react'
 
 function MarketingManagement() {
   const { fetchData } = useApiFetch()
@@ -152,6 +170,124 @@ function MarketingManagement() {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
   }
 
+  const columns = useMemo(() => [
+    {
+      accessorKey: "type",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Type" />
+      ),
+      cell: ({ row }) => {
+        const type = row.original.type
+        return (
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <span className="type-icon">
+              {type === 'video' ? '🎥' : type === 'priceList' ? '💰' : '📄'}
+            </span>
+            <span className="type-badge">{type || 'N/A'}</span>
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: "title",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Title" />
+      ),
+      cell: ({ row }) => <span className="name-cell">{row.original.title || 'Untitled'}</span>,
+    },
+    {
+      id: "project",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Project" />
+      ),
+      cell: ({ row }) => row.original.projectId?.name || 'N/A',
+    },
+    {
+      accessorKey: "description",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Description" />
+      ),
+      cell: ({ row }) => (
+        <span className="description-cell" title={row.original.description}>
+          {row.original.description ? (
+            row.original.description.length > 50
+              ? `${row.original.description.substring(0, 50)}...`
+              : row.original.description
+          ) : (
+            'N/A'
+          )}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "fileSize",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Size" />
+      ),
+      cell: ({ row }) => formatFileSize(row.original.fileSize),
+    },
+    {
+      accessorKey: "isActive",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
+      cell: ({ row }) => (
+        <span className={`status-badge ${row.original.isActive ? 'status-success' : 'status-error'}`}>
+          {row.original.isActive ? 'Active' : 'Inactive'}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Actions" />
+      ),
+      cell: ({ row }) => {
+        const item = row.original
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {item.fileUrl && (
+                <DropdownMenuItem onClick={() => window.open(item.fileUrl, '_blank')}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  View File
+                </DropdownMenuItem>
+              )}
+              {item.videoUrl && (
+                <DropdownMenuItem onClick={() => window.open(item.videoUrl, '_blank')}>
+                  <Play className="mr-2 h-4 w-4" />
+                  Watch Video
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                className="text-destructive ml-0"
+                onClick={() => handleDelete(item._id || item.id)}
+                style={{ color: '#dc2626' }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: collaterals,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  })
+
   return (
     <div className="marketing-management-page">
       <div className="page-header">
@@ -159,43 +295,42 @@ function MarketingManagement() {
           <h1 className="page-title-white">Marketing Collateral</h1>
           <p className="page-subtitle">Manage marketing materials for projects</p>
         </div>
-        <button 
-          className="btn btn-primary"
+        <Button
+          className="btn-primary"
           onClick={handleOpenCreateModal}
         >
-          + Create Collateral
-        </button>
+          <Plus className="mr-2 h-4 w-4" />
+          Create Collateral
+        </Button>
       </div>
 
-      <div className="card filters-section">
-        <div className="filters-grid">
-          <input 
-            type="text" 
-            placeholder="Search by project ID..." 
-            className="search-input-full"
-            value={filters.projectId}
-            onChange={(e) => setFilters({ ...filters, projectId: e.target.value })}
-          />
-          <select 
-            className="filter-select"
-            value={filters.type}
-            onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-          >
-            <option value="">All Types</option>
-            <option value="brochure">Brochure</option>
-            <option value="video">Video</option>
-            <option value="priceList">Price List</option>
-          </select>
-          <select 
-            className="filter-select"
-            value={filters.isActive}
-            onChange={(e) => setFilters({ ...filters, isActive: e.target.value })}
-          >
-            <option value="">All Status</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-        </div>
+      <div className="card marketing-filter">
+        <input
+          type="text"
+          placeholder="Search by project ID..."
+          className="search-input-full"
+          value={filters.projectId}
+          onChange={(e) => setFilters({ ...filters, projectId: e.target.value })}
+        />
+        <select
+          className="filter-select"
+          value={filters.type}
+          onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+        >
+          <option value="">All Types</option>
+          <option value="brochure">Brochure</option>
+          <option value="video">Video</option>
+          <option value="priceList">Price List</option>
+        </select>
+        <select
+          className="filter-select"
+          value={filters.isActive}
+          onChange={(e) => setFilters({ ...filters, isActive: e.target.value })}
+        >
+          <option value="">All Status</option>
+          <option value="true">Active</option>
+          <option value="false">Inactive</option>
+        </select>
       </div>
 
       {loading ? (
@@ -203,87 +338,36 @@ function MarketingManagement() {
       ) : collaterals.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>No marketing collaterals found</div>
       ) : (
-        <div className="card">
+        <div className="marketing-table-card">
           <div className="table-container">
             <table className="marketing-table">
               <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Title</th>
-                  <th>Project</th>
-                  <th>Description</th>
-                  <th>Size</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
+                {table.getHeaderGroups().map(headerGroup => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map(header => (
+                      <th key={header.id}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(header.column.columnDef.header, header.getContext())}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
               </thead>
               <tbody>
-                {collaterals.map((item) => (
-                  <tr key={item._id || item.id}>
-                    <td>
-                      <span className="type-icon">
-                        {item.type === 'video' ? '🎥' : item.type === 'priceList' ? '💰' : '📄'}
-                      </span>
-                      <span className="type-badge">{item.type || 'N/A'}</span>
-                    </td>
-                    <td className="title-cell">{item.title || 'Untitled'}</td>
-                    <td>{item.projectId?.name || 'N/A'}</td>
-                    <td className="description-cell">
-                      {item.description ? (
-                        <span title={item.description}>
-                          {item.description.length > 50 
-                            ? `${item.description.substring(0, 50)}...` 
-                            : item.description}
-                        </span>
-                      ) : (
-                        'N/A'
-                      )}
-                    </td>
-                    <td>{item.fileSize ? formatFileSize(item.fileSize) : 'N/A'}</td>
-                    <td>
-                      <span className={`status-badge ${item.isActive ? 'status-success' : 'status-error'}`}>
-                        {item.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="table-actions">
-                        {item.fileUrl && (
-                          <a 
-                            href={item.fileUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="action-btn"
-                            title="View File"
-                          >
-                            👁️
-                          </a>
-                        )}
-                        {item.videoUrl && (
-                          <a 
-                            href={item.videoUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="action-btn"
-                            title="Watch Video"
-                          >
-                            ▶️
-                          </a>
-                        )}
-                        <button 
-                          className="action-btn"
-                          onClick={() => handleDelete(item._id || item.id)}
-                          title="Delete"
-                          style={{ color: '#dc2626' }}
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </td>
+                {table.getRowModel().rows.map(row => (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <DataTablePagination table={table} />
         </div>
       )}
 
@@ -394,11 +478,12 @@ function MarketingManagement() {
                 />
               </div>
               <div className="form-group">
-                <label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.isActive}
                     onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    style={{ width: 'auto', margin: 0 }}
                   />
                   Active
                 </label>
